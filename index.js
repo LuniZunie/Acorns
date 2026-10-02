@@ -259,8 +259,63 @@ function parseUser(token, user) {
                                     "disablestylededuplication": true
                                 },
                                 response => {
-                                    data.wikis[hostname].edits.push({ edit: edit, parsed: response?.parse || { } });
+                                    const parsedEdit = { edit: edit, categories: response?.parse?.categories || [ ] };
+                                    data.wikis[hostname].edits.push(parsedEdit);
                                     stats.parsed++;
+
+                                    const base = { externallinks: response?.parse?.externallinks || [ ], images: response?.parse?.images || [ ] };
+                                    enqueuer([
+                                        [
+                                            hostname,
+                                            {
+                                                "action": "query",
+                                                "prop": "revisions",
+                                                titles: edit.title,
+
+                                                "rvstartid": edit.revid,
+                                                "rvexcludeuser": user,
+                                                "rvlimit": 1
+                                            },
+                                            response => {
+                                                if ("revisions" in response?.query?.pages?.[0] ?? { }) {
+                                                    const revision = response.query.pages[0].revisions[0];
+                                                    enqueuer([
+                                                        [
+                                                            hostname,
+                                                            {
+                                                                "action": "parse",
+                                                                "oldid": edit.revid,
+                                                                "prop": "categories|externallinks|images",
+
+                                                                "disablelimitreport": true,
+                                                                "disableeditsection": true,
+                                                                "disablestylededuplication": true
+                                                            },
+                                                            response => {
+                                                                const end = { externallinks: response?.parse?.externallinks || [ ], images: response?.parse?.images || [ ] };
+                                                                [ "externallinks", "images" ].forEach(prop => {
+                                                                    const baseSet = new Set(base[prop]), endSet = new Set(end[prop]);
+                                                                    parsedEdit[prop] = {
+                                                                        added: end[prop].filter(item => !baseSet.has(item)),
+                                                                        removed: base[prop].filter(item => !endSet.has(item))
+                                                                    };
+                                                                });
+                                                            },
+                                                            error => {
+                                                                console.error(error);
+                                                            }
+                                                        ]
+                                                    ]);
+                                                } else {
+                                                    parsedEdit.externallinks = { added: base.externallinks, removed: [ ] };
+                                                    parsedEdit.images = { added: base.images, removed: [ ] };
+                                                }
+                                            },
+                                            error => {
+                                                console.error(error);
+                                            }
+                                        ]
+                                    ]);
                                 },
                                 error => {
                                     console.error(error);
