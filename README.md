@@ -28,6 +28,19 @@ Usernames should be separated by the `|` character if you want to query multiple
 ```javascript
 const ws = new WebSocket("ws://localhost:3000");
 ws.addEventListener("open", () => ws.send(`${token}:${username}`));
-ws.addEventListener("message", ({ data }) => console.log(JSON.parse(data)));
+ws.addEventListener("message", ({ data }) => {
+    const json = JSON.parse(data);
+    switch (json.event) {
+        case "progress": {
+            console.log(`Progress: ${json.progress.done}/${json.progress.total} (${((json.progress.done / json.progress.total) * 100).toFixed(2)}%)`);
+        } break;
+        case "done": {
+            console.log("Data received:", json.data);
+        } break;
+        case "error": {
+            console.error("Error:", json.error);
+        } break;
+    }
+});
 ws.addEventListener("error", console.error);
 ```
