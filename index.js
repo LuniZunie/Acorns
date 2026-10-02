@@ -259,13 +259,14 @@ function parseUser(token, user, progressCallback = () => { }) {
 
                             if (merge.editcount > 0) {
                                 editsEnqueuer(hostname, contribsBody);
-                                progress.total += merge.editcount * 4; // 4 API calls per edit* (fetch, parse, query, parse) (*can be 3 if user is onlyauthor of page)
+                                progress.total += merge.editcount * 3 + Math.ceil(merge.editcount / 500); // 3 requests per edit (usually), plus 1 requests for revisions (1 per 500 edits)
                             }
                         });
 
                         const handleNewEdits = (hostname, edits) => {
+                            progress.update(1);
+
                             const count = edits.length;
-                            progress.update(count);
                             for (let i = 0; i < count; i++) {
                                 const edit = edits[i];
                                 enqueuer([
