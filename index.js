@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-
 import { WebSocketServer } from "ws";
 
 import fetchCookie from "fetch-cookie";
@@ -11,7 +10,7 @@ import batchArray from "./custom_modules/batch-array.js";
 import { Time } from "./custom_modules/time.js";
 import { TempMap } from "./custom_modules/temp-map.js";
 
-const RATE_LIMIT_NORMAL = Time.minutes(1) / 2000;
+const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .99);
 if (RATE_LIMIT_NORMAL < 0 || !Number.isFinite(RATE_LIMIT_NORMAL))
     throw new Error("Rate limit (normal) must be a non-negative finite number");
 
@@ -27,18 +26,38 @@ const MAX_USER_CONTRIBUTIONS_PER_REQUEST = 500;
 if (MAX_USER_CONTRIBUTIONS_PER_REQUEST <= 0 || !Number.isFinite(MAX_USER_CONTRIBUTIONS_PER_REQUEST))
     throw new Error("Max user contributions per request must be a positive finite number");
 
+// from https://commons.wikimedia.org/wiki/Special:Upload
+const FILE_EXTENSIONS = /\.(tiff|tif|png|gif|jpg|jpeg|webp|xcf|pdf|mid|ogg|ogv|svg|djvu|oga|flac|opus|wav|webm|mp3|midi|mpg|mpeg)$/i;
+if (!(FILE_EXTENSIONS instanceof RegExp))
+    throw new Error("File extensions must be a regular expression");
+
 // caches
 const hostnameCache = new TempMap(Time.minutes(30)); // cache hostnames with a 30-minute timeout
 
-// makes sure we never undershoot the wait even slightly
-const waitUntil = async time => {
+// main
+const parser = (function (wikitext) {
+    if (typeof wikitext !== "string")
+        return { c: [ ], i: [ ], l: [ ], d: true };
+    return {
+        c: (wikitext.match(this.rCAT) || [ ]).map(match => match.trim().replaceAll("_", " ")),
+        i: (wikitext.match(this.rIMG) || [ ]).map(match => match.trim().replaceAll("_", " ")),
+        l: (wikitext.match(this.rLINK) || [ ]).map(match => match.trim().replaceAll("_", " ")),
+        d: true
+    }
+}).bind({
+    rCAT: new RegExp("(?<=\\[\\[Category:)([^\\]|]+)", "gi"),
+    rIMG: new RegExp(`((?<=\\[\\[:?(File|Image|Media):)([^\\]\\|]+)|((?<==\\s*).+?(?=${FILE_EXTENSIONS})))`, "gi"),
+    rLINK: new RegExp("(?:https?:|(?<=[\\[\\s=|]))//[^\\s\\[\\]<>\"|{}]+", "gi")
+});
+
+
+const waitUntil = (async function(time) { // makes sure we never undershoot the wait even slightly
     let wait = 0;
     do {
-        if (wait > 0)
-            await new Promise(resolve => { setTimeout(resolve, wait); });
+        if (wait > 0) await new Promise(resolve => { setTimeout(resolve, wait); });
         wait = time - performance.now();
     } while (wait > 0);
-};
+});
 
 // returns a Promise resolving to the fetch response
 const mwFetch = (function(token, wiki, params = { }) {
@@ -75,12 +94,19 @@ const enqueueMwFetch = (function(dataList) {
             .then(() => {
                 const call = async ([ wiki, params, response = () => { }, reject = () => { } ]) => {
                     this.last = performance.now();
-                    this.ongoing.push(
-                        mwFetch(this.token, wiki, params)
-                            .then(response => response.json())
-                            .then(response)
-                            .catch(reject)
-                    );
+
+                    let resolveThis;
+                    const thisPromise = new Promise(resolve => { resolveThis = resolve; });
+                    this.ongoing.add(thisPromise);
+
+                    mwFetch(this.token, wiki, params)
+                        .then(response => response.json())
+                        .then(response)
+                        .catch(reject)
+                        .finally(() => {
+                            resolveThis();
+                            this.ongoing.delete(thisPromise);
+                        });
 
                     // wait for the rate limit interval to pass before processing the next request
                     await waitUntil(this.last + this.rateLimit);
@@ -88,23 +114,20 @@ const enqueueMwFetch = (function(dataList) {
                         let resolveNext;
                         const nextPromise = new Promise(resolve => { resolveNext = resolve; });
                         setTimeout(() => call(this.queue.shift()).finally(resolveNext), 0); // bypass call stack limit
-                        return nextPromise;
+                        return await nextPromise;
                     }
                 };
 
                 call(this.queue.shift())
                     .finally(() => {
-                        const ongoing = [ ...this.ongoing ];
-                        this.ongoing = [ ];
-
                         this.idle = performance.now();
                         this.active = false;
 
-                        Promise.all(ongoing)
+                        Promise.all(Array.from(this.ongoing))
                             .finally(() => {
                                 setTimeout(() => {
                                     if (this.queue.length === 0 && this.id === id)
-                                        this.callbacks.forEach(fn => fn());
+                                        this.callbacks = this.callbacks.filter(fn => fn());
                                 }, 0);
                             })
                     });
@@ -117,31 +140,33 @@ const enqueueMwFetch = (function(dataList) {
 
 const getEnqueuer = (function (token, rateLimit) {
     for (const [ key, value ] of this.enqueuers) {
-        if (key === token)
-            return value.enqueuer;
+        if (key === token) return value.enqueuer;
         else {
             const idle = value.context.idle;
-            if (idle === false)
-                continue;
+            if (idle === false) continue;
             else if (performance.now() - idle > Time.minutes(30))
                 this.enqueuers.delete(key);
         }
     }
 
-    const context = { token, ongoing: [ ], queue: [ ], last: -rateLimit, rateLimit, callbacks: [ ], id: 0n, active: false, idle: false }
+    const context = { token, ongoing: new Set(), queue: [ ], last: -rateLimit, rateLimit, callbacks: [ ], id: 0n, active: false, idle: false }
     const enqueuer = enqueueMwFetch.bind(context);
     this.enqueuers.set(token, { context, enqueuer });
     return enqueuer;
 }).bind({ enqueuers: new Map() });
 
 function parseUser(token, user, cancel, progressCallback = () => { }) {
-    const start = performance.now();
     const progress = {
         total: 0,
         done: 0,
         update: function(n) {
+            if (n === 0)
+                return progressCallback(this.done, this.total);
+
+            const temp = this.done;
             this.done = Math.min(this.done + n, this.total);
-            progressCallback(this.done, this.total);
+            if (this.done > temp)
+                progressCallback(this.done, this.total);
         }
     };
 
@@ -185,6 +210,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
             };
             const uploadsResponseHandler = response => {
                 if (cancel.cancelled) return;
+
                 addArrayToArray(data.uploads, response?.query?.logevents || [ ]);
                 if (response?.continue)
                     enqueuer([
@@ -207,6 +233,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                 /* list>usercontribs */
                 "ucuser": user,
+                "ucprop": "ids|title|timestamp|comment|sizediff|tags",
                 "uclimit": "max",
 
                 /* list>blocks */
@@ -221,13 +248,14 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         response => {
                             if (cancel.cancelled) return;
 
-                            progress.update(1);
                             if (response?.query?.blocks)
                                 data.wikis[hostname].blocks = response.query.blocks;
 
                             handleNewEdits(hostname, response?.query?.usercontribs || [ ]);
                             if (response.continue)
                                 editsEnqueuer(hostname, { ...contribsBody, ...response.continue });
+
+                            progress.update(1);
                         },
                         error => {
                             console.error(error);
@@ -236,23 +264,74 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 ]);
             };
 
+            const buildEdit = edit => {
+                delete edit.B.c;
+
+                edit.categories = edit.A.c;
+                delete edit.A.c;
+
+                {
+                    const imagesBSet = new Set(edit.B.i);
+
+                    {
+                        const imagesASet = new Set(edit.A.i);
+                        for (const image of edit.B.i)
+                            if (!imagesASet.has(image))
+                                edit.images["+"].push(image);
+                        delete edit.B.i;
+                    }
+
+                    for (const image of edit.A.i)
+                        if (!imagesBSet.has(image))
+                            edit.images["-"].push(image);
+                    delete edit.A.i;
+                }
+
+                {
+                    const linksBSet = new Set(edit.B.l);
+
+                    {
+                        const linksASet = new Set(edit.A.l);
+                        for (const link of edit.B.l)
+                            if (!linksASet.has(link))
+                                edit.links["+"].push(link);
+                        delete edit.B.l;
+                    }
+
+                    for (const link of edit.A.l)
+                        if (!linksBSet.has(link))
+                            edit.links["-"].push(link);
+                    delete edit.A.l;
+                }
+
+                delete edit.A;
+                delete edit.B;
+            };
+
             const handleNewEdits = (hostname, edits) => {
                 let skippedParents = 0;
                 const parentIds = new Set();
                 const parentToBase = new Map();
                 for (const batch of batchArray(edits, EDIT_BATCH)) {
                     let baseRevids = "";
-                    for (const edit of batch) {
-                        data.wikis[hostname].edits[edit.revid] = { edit, base: "", parent: "" };
+                    for (const batchEdit of batch) {
+                        const edit = data.wikis[hostname].edits[batchEdit.revid] = {
+                            edit: batchEdit,
+                            categories: [ ],
+                            images: { "+": [ ], "-": [ ] },
+                            links: { "+": [ ], "-": [ ] },
+                            A: { c: [ ], i: [ ], l: [ ], d: false },
+                            B: { c: [ ], i: [ ], l: [ ], d: false }
+                        };
 
-                        baseRevids += baseRevids ? `|${edit.revid}` : edit.revid;
-                        if (edit.parentid) {
-                            parentIds.add(edit.parentid);
-                            parentToBase.set(edit.parentid, edit.revid);
+                        baseRevids += baseRevids ? `|${batchEdit.revid}` : batchEdit.revid;
+                        if (batchEdit.parentid) {
+                            parentIds.add(batchEdit.parentid);
+                            parentToBase.set(batchEdit.parentid, batchEdit.revid);
                         } else {
+                            edit.B.d = true;
                             skippedParents = (skippedParents + 1) % EDIT_BATCH;
-                            if (skippedParents === 0)
-                                progress.update(1); // we've esentially skipped a whole batch
+                            if (skippedParents === 0) progress.update(1); // we've esentially skipped a whole batch
                         }
                     }
 
@@ -270,10 +349,20 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             response => {
                                 if (cancel.cancelled) return;
 
-                                progress.update(1);
+                                for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
+                                    const edit = data.wikis[hostname].edits[badRev];
+                                    edit.A.d = true;
+                                    if (edit.B.d) buildEdit(edit);
+                                }
+
                                 for (const page of response?.query?.pages || [ ])
-                                    for (const rev of page?.revisions || [ ])
-                                        data.wikis[hostname].edits[rev.revid].base = rev.content;
+                                    for (const rev of page?.revisions || [ ]) {
+                                        const edit = data.wikis[hostname].edits[rev.revid];
+                                        edit.A = parser(rev.content);
+                                        if (edit.B.d) buildEdit(edit);
+                                    }
+
+                                progress.update(1);
                             },
                             error => {
                                 console.error(error);
@@ -285,10 +374,10 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         let parentRevids = "";
                         const iterator = parentIds.values();
                         for (let i = 0; i < EDIT_BATCH; i++) {
-                            const { next, done } = iterator.next();
+                            const { value, done } = iterator.next();
                             if (done) break;
-                            parentRevids += parentRevids ? `|${next}` : next;
-                            parentIds.delete(next);
+                            parentRevids += parentRevids ? `|${value}` : value;
+                            parentIds.delete(value);
                         }
 
                         enqueuer([
@@ -305,10 +394,20 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                                 response => {
                                     if (cancel.cancelled) return;
 
-                                    progress.update(1);
+                                    for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
+                                        const edit = data.wikis[hostname].edits[parentToBase.get(badRev.revid)];
+                                        edit.B.d = true;
+                                        if (edit.A.d) buildEdit(edit);
+                                    }
+
                                     for (const page of response?.query?.pages || [ ])
-                                        for (const rev of page?.revisions || [ ])
-                                            data.wikis[hostname].edits[parentToBase.get(rev.revid)].parent = rev.content;
+                                        for (const rev of page?.revisions || [ ]) {
+                                            const edit = data.wikis[hostname].edits[parentToBase.get(rev.revid)];
+                                            edit.B = parser(rev.content);
+                                            if (edit.A.d) buildEdit(edit);
+                                        }
+
+                                    progress.update(1);
                                 },
                                 error => {
                                     console.error(error);
@@ -333,10 +432,20 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             response => {
                                 if (cancel.cancelled) return;
 
-                                progress.update(1);
+                                for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
+                                    const edit = data.wikis[hostname].edits[parentToBase.get(badRev.revid)];
+                                    edit.B.d = true;
+                                    if (edit.A.d) buildEdit(edit);
+                                }
+
                                 for (const page of response?.query?.pages || [ ])
-                                    for (const rev of page?.revisions || [ ])
-                                        data.wikis[hostname].edits[parentToBase.get(rev.revid)].parent = rev.content;
+                                    for (const rev of page?.revisions || [ ]) {
+                                        const edit = data.wikis[hostname].edits[parentToBase.get(rev.revid)];
+                                        edit.B = parser(rev.content);
+                                        if (edit.A.d) buildEdit(edit);
+                                    }
+
+                                progress.update(1);
                             },
                             error => {
                                 console.error(error);
@@ -386,6 +495,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                                 editsEnqueuer(hostname, contribsBody);
                             }
                         });
+
                         progress.update(0); // initial progress update
                     },
                     error => {
@@ -402,7 +512,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         progress.update(0);
                     }
 
-                    resolver({ data, duration: performance.now() - start });
+                    resolver(data);
                 });
         })
         .catch(error => {
@@ -424,10 +534,15 @@ wss.on("connection", ws => {
         if (!token || !usernames)
             return ws.send(JSON.stringify({ event: "error", error: "Invalid token or username" }));
 
-        for (const user of new Set(usernames.split("|")))
-            parseUser(token, user, cancel, (done, total) => {
-                ws.send(JSON.stringify({ event: "progress", progress: { done, total } }));
-            })
+        for (const username of new Set(usernames.split("|")))
+            parseUser(
+                token,
+                username.trim().replaceAll("_", " "),
+                cancel,
+                (done, total) => {
+                    ws.send(JSON.stringify({ event: "progress", progress: { done, total } }));
+                }
+            )
                 .then(data => ws.send(JSON.stringify({ event: "done", data })))
                 .catch(error => ws.send(JSON.stringify({ event: "error", error: error.message })));
     });
