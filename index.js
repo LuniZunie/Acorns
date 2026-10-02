@@ -531,8 +531,10 @@ wss.on("connection", ws => {
         if (cancel.cancelled) return;
 
         const [ token, usernames ] = data.toString().split(/:(.*)/s);
-        if (!token || !usernames)
-            return ws.send(JSON.stringify({ event: "error", error: "Invalid token or username" }));
+        if (!token)
+            return ws.send(JSON.stringify({ event: "error", error: "Invalid token" }));
+        if (!usernames)
+            return ws.send(JSON.stringify({ event: "error", error: "Invalid usernames" }));
 
         for (const username of new Set(usernames.split("|")))
             parseUser(
