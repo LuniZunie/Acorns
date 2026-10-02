@@ -84,7 +84,7 @@ const mwFetch = (function(token, wiki, params = { }) {
 
 const enqueueMwFetch = (function(dataList) {
     addArrayToArray(this.queue, dataList);
-    this.queue = this.queue.sort((a, b) => b[4] - a[4]);
+    this.queue.sort((a, b) => b[4] - a[4]);
 
     if (dataList.length > 0 && !this.active) {
         const id = ++this.id;
