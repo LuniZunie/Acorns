@@ -40,13 +40,13 @@ const parser = (function (wikitext) {
         return { c: [ ], i: [ ], l: [ ], d: true };
     return {
         c: (wikitext.match(this.rCAT) || [ ]).map(match => match.trim().replaceAll("_", " ")),
-        i: (wikitext.match(this.rIMG) || [ ]).map(match => match.trim().replaceAll("_", " ")),
+        i: (wikitext.match(this.rIMG) || [ ]).map(match => match.slice(1).trim().replaceAll("_", " ")),
         l: (wikitext.match(this.rLINK) || [ ]).map(match => match.trim().replaceAll("_", " ")),
         d: true
     }
 }).bind({
     rCAT: new RegExp("(?<=\\[\\[Category:)([^\\]|]+)", "gi"),
-    rIMG: new RegExp(`((?<=\\[\\[:?(File|Image|Media):)([^\\]\\|]+)|((?<==\\s*).+?(?=${FILE_EXTENSIONS})))`, "gi"),
+    rIMG: new RegExp(`((?<=\\[\\[:?(File|Image|Media):)([^\\]\\|]+)|(=[^\n\\[\\]\\{\\}\\\\/<>#|]+?\\.(?:tiff?|png|gif|jpe?g|webp|xcf|pdf|midi?|og[gva]|svg|djvu|flac|opus|wav|webm|mp3|mpe?g)))`, "gi"),
     rLINK: new RegExp("(?:https?:|(?<=[\\[\\s=|]))//[^\\s\\[\\]<>\"|{}]+", "gi")
 });
 
@@ -84,6 +84,8 @@ const mwFetch = (function(token, wiki, params = { }) {
 
 const enqueueMwFetch = (function(dataList) {
     addArrayToArray(this.queue, dataList);
+    this.queue = this.queue.sort((a, b) => b[4] - a[4]);
+
     if (dataList.length > 0 && !this.active) {
         const id = ++this.id;
         this.active = true;
@@ -218,7 +220,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             "commons.wikimedia.org",
                             { ...uploadsBody, ...response.continue },
                             uploadsResponseHandler,
-                            uploadsErrorHandler
+                            uploadsErrorHandler,
+                            0
                         ]
                     ]);
             };
@@ -259,7 +262,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         },
                         error => {
                             console.error(error);
-                        }
+                        },
+                        1
                     ]
                 ]);
             };
@@ -366,7 +370,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             },
                             error => {
                                 console.error(error);
-                            }
+                            },
+                            0
                         ]
                     ]);
 
@@ -411,7 +416,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                                 },
                                 error => {
                                     console.error(error);
-                                }
+                                },
+                                0
                             ]
                         ]);
                     }
@@ -449,7 +455,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             },
                             error => {
                                 console.error(error);
-                            }
+                            },
+                            0
                         ]
                     ]);
             };
@@ -500,7 +507,8 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     },
                     error => {
                         console.error(error);
-                    }
+                    },
+                    0
                 ],
                 [ "commons.wikimedia.org", uploadsBody, uploadsResponseHandler, uploadsErrorHandler ]
             ])
@@ -536,17 +544,15 @@ wss.on("connection", ws => {
         if (!usernames)
             return ws.send(JSON.stringify({ event: "error", error: "Invalid usernames" }));
 
-        for (const username of new Set(usernames.split("|")))
-            parseUser(
-                token,
-                username.trim().replaceAll("_", " "),
-                cancel,
-                (done, total) => {
-                    ws.send(JSON.stringify({ event: "progress", progress: { done, total } }));
-                }
-            )
+        for (const username of new Set(usernames.split("|"))) {
+            let standardUsername = username.trim().replaceAll("_", " ");
+            standardUsername = standardUsername.charAt(0).toUpperCase() + standardUsername.slice(1);
+            parseUser(token, standardUsername, cancel, (done, total) => {
+                ws.send(JSON.stringify({ event: "progress", progress: { done, total } }));
+            })
                 .then(data => ws.send(JSON.stringify({ event: "done", data })))
                 .catch(error => ws.send(JSON.stringify({ event: "error", error: error.message })));
+        }
     });
     ws.on("close", () => {
         cancel.cancelled = true;
