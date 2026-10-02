@@ -393,16 +393,17 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     }
                 ],
                 [ "commons.wikimedia.org", uploadsBody, uploadsResponseHandler, uploadsErrorHandler ]
-            ]).callback(() => {
-                if (cancel.cancelled) return;
+            ])
+                .callback(() => {
+                    if (cancel.cancelled) return;
 
-                if (progress.done < progress.total) {
-                    progress.done = progress.total;
-                    progress.update(0);
-                }
+                    if (progress.done < progress.total) {
+                        progress.done = progress.total;
+                        progress.update(0);
+                    }
 
-                resolver({ data, duration: performance.now() - start });
-            });
+                    resolver({ data, duration: performance.now() - start });
+                });
         })
         .catch(error => {
             console.error(error);
