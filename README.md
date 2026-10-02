@@ -6,8 +6,8 @@ A Wikipedia SPI tool.
 
 #### Clone the repository
 ```bash
-git clone https://github.com/your-username/wikipedia-acorns.git
-cd wikipedia-acorns
+git clone https://github.com/LuniZunie/Acorns.git
+cd Acorns
 ```
 
 #### Install dependencies
