@@ -23,6 +23,7 @@ npm start
 ## Communication with the Server
 
 Make sure to replace `${token}` and `${username}` with the actual token and username when connecting to the WebSocket server.
+Usernames should be separated by the `|` character if you want to query multiple users at once.
 
 ```javascript
 const ws = new WebSocket("ws://localhost:3000");

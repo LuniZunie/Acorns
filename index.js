@@ -125,6 +125,7 @@ function parseUser(token, user) {
     const enqueuer = getEnqueuer(token);
 
     const data = {
+        user,
         gui: { },
         gus: { },
         bg: { },
@@ -284,13 +285,14 @@ const wss = new WebSocketServer({ server });
 
 wss.on("connection", ws => {
     ws.on("message", data => {
-        const [ token, username ] = data.toString().split(/:(.*)/s);
-        if (!token || !username)
+        const [ token, usernames ] = data.toString().split(/:(.*)/s);
+        if (!token || !usernames)
             return ws.send(JSON.stringify({ error: "Invalid token or username" }));
 
-        parseUser(token, username)
-            .then(data => ws.send(JSON.stringify(data)))
-            .catch(error => ws.send(JSON.stringify({ error: error.message })));
+        for (const user of new Set(usernames.split("|")))
+            parseUser(token, user)
+                .then(data => ws.send(JSON.stringify(data)))
+                .catch(error => ws.send(JSON.stringify({ error: error.message })));
     });
 });
 
