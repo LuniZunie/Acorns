@@ -27,7 +27,7 @@ Usernames should be separated by the `|` character if you want to query multiple
 
 ```javascript
 const websocket = new WebSocket("ws://localhost:3000");
-websocket.addEventListener("open", () => { ws.send(`${token}:${username}`); });
+websocket.addEventListener("open", () => { websocket.send(`${token}:${username}`); });
 websocket.addEventListener("message", ({ data }) => {
     const json = JSON.parse(data);
     switch (json.event) {
@@ -47,7 +47,7 @@ websocket.addEventListener("message", ({ data }) => {
                     buffer[i] = bin.charCodeAt(i);
 
                 const stream = new Blob([ buffer ]).stream().pipeThrough(new DecompressionStream("gzip"));
-                const decompressed= = await new Response(stream).arrayBuffer();
+                const decompressed = await new Response(stream).arrayBuffer();
                 const data = JSON.parse(new TextDecoder().decode(decompressed));
 
                 /* ... */

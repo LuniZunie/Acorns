@@ -180,7 +180,46 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
         }
     };
 
-    const data = { user, uploads: [ ], projects: [ ] };
+    const data = {
+        user,
+        uploads: [ ],
+        projects: [ ],
+
+        __lookup__: {
+            array: {
+                UUID: 0,
+                map: { }
+            },
+            string: {
+                UUID: 0,
+                map: { }
+            }
+        }
+    };
+
+    const __en__ = value => { // only use on arrays with strings that can not contain "|"
+        if (typeof value === "string") {
+            if (value === "") return;
+
+            const lookup = data.__lookup__.string;
+            if (value in lookup.map) return lookup.map[value];
+            return lookup.map[value] = ++lookup.UUID;
+        } else if (Array.isArray(value)) {
+            const len = value.length;
+            if (len === 0) return;
+
+            let result = "";
+            for (let i = 0; i < len; i++) {
+                const temp = __en__(value[i]);
+                result += result ? `|${temp}` : temp;
+            }
+
+            const lookup = data.__lookup__.array;
+            if (result in lookup.map) return lookup.map[result];
+            return lookup.map[result] = ++lookup.UUID;
+        } else
+            throw new Error(`Unsupported value type for compression: ${typeof value}`);
+    };
 
     const projectsMap = new Map();
 
@@ -203,7 +242,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
             if (cancel.cancelled) return;
 
             const rateLimitExempt = groups => groups.some(group => [ "local-bot", "steward" ].includes(group));
-            const enqueuer = getEnqueuer(token, rateLimitExempt(response.query.globaluserinfo.groups || [ ]) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL);
+            const enqueuer = getEnqueuer(token, rateLimitExempt(response.query.globaluserinfo?.groups || [ ]) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL);
 
             const uploadsBody = {
                 "action": "query",
@@ -220,7 +259,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 if (cancel.cancelled) return;
 
                 addArrayToArray(data.uploads, (response.query.logevents || [ ]).map(le =>
-                    ({ logid: le.logid, title: le.title, timestamp: le.timestamp, comment: le.comment, tags: le.tags })
+                    ({ logid: le.logid, title: __en__(le.title), timestamp: le.timestamp, comment: __en__(le.comment), tags: __en__(le.tags) })
                 ));
                 if (response.continue)
                     enqueuer([
@@ -233,9 +272,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         ]
                     ]);
             };
-            const uploadsErrorHandler = error => {
-                console.error(error);
-            };
+            const uploadsErrorHandler = error => { console.error(error); };
 
             const contribsBody = {
                 "action": "query",
@@ -260,7 +297,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             if (cancel.cancelled) return;
 
                             if (response.query.blocks)
-                                projectsMap.get(project).blocks = response.query.blocks;
+                                projectsMap.get(project).blocks = (response.query.blocks || [ ]).map(block => ({ ...block, reason: __en__(block.reason), user: undefined }))
 
                             handleNewEdits(project, response.query.usercontribs || [ ]);
                             if (response.continue)
@@ -268,9 +305,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                             progress.update(1);
                         },
-                        error => {
-                            console.error(error);
-                        },
+                        error => { console.error(error); },
                         1
                     ]
                 ]);
@@ -279,7 +314,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
             const buildEdit = edit => {
                 delete edit.B.c;
 
-                edit.categories = edit.A.c;
+                edit.categories = __en__(edit.A.c);
                 delete edit.A.c;
 
                 {
@@ -291,29 +326,43 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             if (!imagesASet.has(image))
                                 edit.images["+"].push(image);
                         delete edit.B.i;
+
+                        edit.images["+"] = __en__(edit.images["+"]);
                     }
 
                     for (const image of edit.A.i)
                         if (!imagesBSet.has(image))
                             edit.images["-"].push(image);
                     delete edit.A.i;
+
+                    edit.images["-"] = __en__(edit.images["-"]);
+                    if (edit.images["+"] === undefined && edit.images["-"] === undefined)
+                        delete edit.images;
                 }
 
                 {
-                    const linksBSet = new Set(edit.B.l);
+                    // for links, if they change the capitalization, they didn't really add a new link
+                    // we really only care about the domain part of the links, which are case-insensitive anyways
+                    const linksBSet = new Set(edit.B.l.map(link => link.toLowerCase()));
 
                     {
-                        const linksASet = new Set(edit.A.l);
+                        const linksASet = new Set(edit.A.l.map(link => link.toLowerCase()));
                         for (const link of edit.B.l)
-                            if (!linksASet.has(link))
+                            if (!linksASet.has(link.toLowerCase()))
                                 edit.links["+"].push(link);
                         delete edit.B.l;
+
+                        edit.links["+"] = __en__(edit.links["+"]);
                     }
 
                     for (const link of edit.A.l)
-                        if (!linksBSet.has(link))
+                        if (!linksBSet.has(link.toLowerCase()))
                             edit.links["-"].push(link);
                     delete edit.A.l;
+
+                    edit.links["-"] = __en__(edit.links["-"]);
+                    if (edit.links["+"] === undefined && edit.links["-"] === undefined)
+                        delete edit.links;
                 }
 
                 delete edit.A;
@@ -331,13 +380,13 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     let baseRevids = "";
                     for (const batchEdit of batch) {
                         const edit = {
-                            title: batchEdit.title,
+                            title: __en__(batchEdit.title),
                             revid: batchEdit.revid,
                             parentid: batchEdit.parentid,
 
                             timestamp: batchEdit.timestamp,
-                            comment: batchEdit.comment,
-                            tags: batchEdit.tags,
+                            comment: __en__(batchEdit.comment || ""),
+                            tags: __en__(batchEdit.tags || [ ]),
                             sizediff: batchEdit.sizediff,
 
                             categories: [ ],
@@ -375,6 +424,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             },
                             response => {
                                 if (cancel.cancelled) return;
+                                if (!response.query) return;
 
                                 for (const badRev of Object.values(response.query.badrevids || [ ])) {
                                     const edit = editMap.get(badRev);
@@ -391,9 +441,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                                 progress.update(1);
                             },
-                            error => {
-                                console.error(error);
-                            },
+                            error => { console.error(error); },
                             0
                         ]
                     ]);
@@ -421,6 +469,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                                 },
                                 response => {
                                     if (cancel.cancelled) return;
+                                    if (!response.query) return;
 
                                     for (const badRev of Object.values(response.query.badrevids || [ ])) {
                                         const edit = editMap.get(parentToBase.get(badRev.revid));
@@ -437,9 +486,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                                     progress.update(1);
                                 },
-                                error => {
-                                    console.error(error);
-                                },
+                                error => { console.error(error); },
                                 0
                             ]
                         ]);
@@ -460,6 +507,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             },
                             response => {
                                 if (cancel.cancelled) return;
+                                if (!response.query) return;
 
                                 for (const badRev of Object.values(response.query.badrevids || [ ])) {
                                     const edit = editMap.get(parentToBase.get(badRev.revid));
@@ -476,9 +524,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                                 progress.update(1);
                             },
-                            error => {
-                                console.error(error);
-                            },
+                            error => { console.error(error); },
                             0
                         ]
                     ]);
@@ -507,6 +553,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     },
                     response => {
                         if (cancel.cancelled) return;
+                        if (!response.query?.globaluserinfo || !response.query?.globalusers?.length) return;
 
                         const globalUserInfo = response.query.globaluserinfo;
                         const globalUser = response.query.globalusers[0];
@@ -518,11 +565,11 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                         data.edit_count = globalUser.editcount;
 
-                        data.groups = globalUser.groups;
-                        data.rights = globalUser.rights;
+                        data.groups = __en__(globalUser.groups || [ ]);
+                        data.rights = __en__(globalUser.rights || [ ]);
 
                         data.locked = globalUser.locked;
-                        data.blocks = response.query.globalblocks;
+                        data.blocks = (response.query.globalblocks || [ ]).map(block => ({ ...block, reason: __en__(block.reason || ""), target: undefined }));
 
                         (globalUserInfo.merged ?? [ ]).map(merge => {
                             const project = projectCache.renew(merge.url, () => new URL(merge.url).hostname);
@@ -552,9 +599,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                         progress.update(0); // initial progress update
                     },
-                    error => {
-                        console.error(error);
-                    },
+                    error => { console.error(error); },
                     0
                 ],
                 [ "commons.wikimedia.org", uploadsBody, uploadsResponseHandler, uploadsErrorHandler ]
@@ -572,9 +617,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     resolver(btoa(new Uint8Array(buffer).reduce((acc, byte) => acc + String.fromCharCode(byte), "")));
                 });
         })
-        .catch(error => {
-            console.error(error);
-        });
+        .catch(error => { console.error(error); });
 
     return promise;
 }
