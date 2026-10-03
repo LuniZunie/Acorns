@@ -26,21 +26,40 @@ Make sure to replace `${token}` and `${username}` with the actual token and user
 Usernames should be separated by the `|` character if you want to query multiple users at once.
 
 ```javascript
-const ws = new WebSocket("ws://localhost:3000");
-ws.addEventListener("open", () => ws.send(`${token}:${username}`));
-ws.addEventListener("message", ({ data }) => {
+const websocket = new WebSocket("ws://localhost:3000");
+websocket.addEventListener("open", () => { ws.send(`${token}:${username}`); });
+websocket.addEventListener("message", ({ data }) => {
     const json = JSON.parse(data);
     switch (json.event) {
         case "progress": {
-            console.log(`Progress: ${json.progress.done}/${json.progress.total} (${((json.progress.done / json.progress.total) * 100).toFixed(2)}%)`);
+            const { done, total } = json.progress;
+
+            /* ... */
         } break;
         case "done": {
-            console.log("Data received:", json.data);
+            (async str => {
+                // Decode the base64-encoded gzipped data into JSON
+                const bin = atob(str);
+                const len = bin.length;
+
+                const buffer = new Uint8Array(len);
+                for (let i = 0; i < len; i++)
+                    buffer[i] = bin.charCodeAt(i);
+
+                const stream = new Blob([ buffer ]).stream().pipeThrough(new DecompressionStream("gzip"));
+                const decompressed= = await new Response(stream).arrayBuffer();
+                const data = JSON.parse(new TextDecoder().decode(decompressed));
+
+                /* ... */
+            })(json.data);
         } break;
         case "error": {
-            console.error("Error:", json.error);
+            const { error } = json;
+
+            /* ... */
         } break;
     }
 });
-ws.addEventListener("error", console.error);
+websocket.addEventListener("close", () => { console.log("Connection closed"); });
+websocket.addEventListener("error", error => { console.error("Connection error:", error); });
 ```

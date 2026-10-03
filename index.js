@@ -32,7 +32,7 @@ if (!(FILE_EXTENSIONS instanceof RegExp))
     throw new Error("File extensions must be a regular expression");
 
 // caches
-const hostnameCache = new TempMap(Time.minutes(30)); // cache hostnames with a 30-minute timeout
+const projectCache = new TempMap(Time.minutes(30)); // cache projects with a 30-minute timeout
 
 // main
 const parser = (function (wikitext) {
@@ -60,15 +60,15 @@ const waitUntil = (async function(time) { // makes sure we never undershoot the 
 });
 
 // returns a Promise resolving to the fetch response
-const mwFetch = (function(token, wiki, params = { }) {
+const mwFetch = (function(token, project, params = { }) {
     if (typeof token !== "string")
         throw new Error("(mwFetch) Argument[0] must be a string");
-    if (typeof wiki !== "string")
+    if (typeof project !== "string")
         throw new Error("(mwFetch) Argument[1] must be a string");
     if (typeof params !== "object" || params === null)
         throw new Error("(mwFetch) Argument[2] must be a non-null object");
 
-    return this.sessionFetch(`https://${wiki}/w/api.php`, {
+    return this.sessionFetch(`https://${project}/w/api.php`, {
         method: "POST",
         headers: {
             "User-Agent": "Acorns/1.0 (https://github.com/LuniZunie/Acorns)",
@@ -83,8 +83,16 @@ const mwFetch = (function(token, wiki, params = { }) {
 }).bind({ sessionFetch: fetchCookie(fetch, new CookieJar()) });
 
 const enqueueMwFetch = (function(dataList) {
-    addArrayToArray(this.queue, dataList);
-    this.queue.sort((a, b) => b[4] - a[4]);
+    const priorityGroups = { };
+    for (const item of this.queue)
+        (priorityGroups[item[4]] ??= [ ]).push(item);
+    for (const item of dataList)
+        (priorityGroups[item[4]] ??= [ ]).push(item);
+
+    const temp = [ ];
+    for (const priority of Object.keys(priorityGroups).sort((a, b) => b - a))
+        addArrayToArray(temp, priorityGroups[priority]);
+    this.queue = temp;
 
     if (dataList.length > 0 && !this.active) {
         const id = ++this.id;
@@ -94,14 +102,14 @@ const enqueueMwFetch = (function(dataList) {
 
         waitUntil(this.last + this.rateLimit)
             .then(() => {
-                const call = async ([ wiki, params, response = () => { }, reject = () => { } ]) => {
+                const call = async ([ project, params, response = () => { }, reject = () => { } ]) => {
                     this.last = performance.now();
 
                     let resolveThis;
                     const thisPromise = new Promise(resolve => { resolveThis = resolve; });
                     this.ongoing.add(thisPromise);
 
-                    mwFetch(this.token, wiki, params)
+                    mwFetch(this.token, project, params)
                         .then(response => response.json())
                         .then(response)
                         .catch(reject)
@@ -172,14 +180,9 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
         }
     };
 
-    const data = {
-        user,
-        gui: { },
-        gus: { },
-        bg: { },
-        wikis: { },
-        uploads: [ ]
-    };
+    const data = { user, uploads: [ ], projects: [ ] };
+
+    const projectsMap = new Map();
 
     let resolver;
     const promise = new Promise(resolve => resolver = resolve);
@@ -195,26 +198,31 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
             "guiprop": "groups",
         }
     )
+        .then(response => response.json())
         .then(response => {
             if (cancel.cancelled) return;
 
             const rateLimitExempt = groups => groups.some(group => [ "local-bot", "steward" ].includes(group));
-            const enqueuer = getEnqueuer(token, rateLimitExempt(response?.query?.globaluserinfo?.groups || [ ]) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL);
+            const enqueuer = getEnqueuer(token, rateLimitExempt(response.query.globaluserinfo.groups || [ ]) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL);
 
             const uploadsBody = {
                 "action": "query",
                 "list": "logevents",
 
                 /* list>logevents */
-                leuser: user,
-                letype: "upload",
-                lelimit: "max"
+                "leuser": user,
+                "letype": "upload",
+                "leaction": "upload/upload",
+                "leprop": "ids|title|timestamp|comment|tags",
+                "lelimit": "max"
             };
             const uploadsResponseHandler = response => {
                 if (cancel.cancelled) return;
 
-                addArrayToArray(data.uploads, response?.query?.logevents || [ ]);
-                if (response?.continue)
+                addArrayToArray(data.uploads, (response.query.logevents || [ ]).map(le =>
+                    ({ logid: le.logid, title: le.title, timestamp: le.timestamp, comment: le.comment, tags: le.tags })
+                ));
+                if (response.continue)
                     enqueuer([
                         [
                             "commons.wikimedia.org",
@@ -243,20 +251,20 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 "bkusers": user,
                 "bkprop": "id|user|by|reason|expiry|flags"
             };
-            const editsEnqueuer = (hostname, params) => {
+            const editsEnqueuer = (project, params) => {
                 enqueuer([
                     [
-                        hostname,
+                        project,
                         params,
                         response => {
                             if (cancel.cancelled) return;
 
-                            if (response?.query?.blocks)
-                                data.wikis[hostname].blocks = response.query.blocks;
+                            if (response.query.blocks)
+                                projectsMap.get(project).blocks = response.query.blocks;
 
-                            handleNewEdits(hostname, response?.query?.usercontribs || [ ]);
+                            handleNewEdits(project, response.query.usercontribs || [ ]);
                             if (response.continue)
-                                editsEnqueuer(hostname, { ...contribsBody, ...response.continue });
+                                editsEnqueuer(project, { ...contribsBody, ...response.continue });
 
                             progress.update(1);
                         },
@@ -312,21 +320,36 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 delete edit.B;
             };
 
-            const handleNewEdits = (hostname, edits) => {
+            const handleNewEdits = (project, edits) => {
+                const projectData = projectsMap.get(project);
+                const editMap = new Map();
+
                 let skippedParents = 0;
                 const parentIds = new Set();
                 const parentToBase = new Map();
                 for (const batch of batchArray(edits, EDIT_BATCH)) {
                     let baseRevids = "";
                     for (const batchEdit of batch) {
-                        const edit = data.wikis[hostname].edits[batchEdit.revid] = {
-                            edit: batchEdit,
+                        const edit = {
+                            title: batchEdit.title,
+                            revid: batchEdit.revid,
+                            parentid: batchEdit.parentid,
+
+                            timestamp: batchEdit.timestamp,
+                            comment: batchEdit.comment,
+                            tags: batchEdit.tags,
+                            sizediff: batchEdit.sizediff,
+
                             categories: [ ],
                             images: { "+": [ ], "-": [ ] },
                             links: { "+": [ ], "-": [ ] },
+
                             A: { c: [ ], i: [ ], l: [ ], d: false },
                             B: { c: [ ], i: [ ], l: [ ], d: false }
                         };
+
+                        projectData.edits.push(edit);
+                        editMap.set(batchEdit.revid, edit);
 
                         baseRevids += baseRevids ? `|${batchEdit.revid}` : batchEdit.revid;
                         if (batchEdit.parentid) {
@@ -341,7 +364,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                     enqueuer([
                         [
-                            hostname,
+                            project,
                             {
                                 "action": "query",
                                 "prop": "revisions",
@@ -353,15 +376,15 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             response => {
                                 if (cancel.cancelled) return;
 
-                                for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
-                                    const edit = data.wikis[hostname].edits[badRev];
+                                for (const badRev of Object.values(response.query.badrevids || [ ])) {
+                                    const edit = editMap.get(badRev);
                                     edit.A.d = true;
                                     if (edit.B.d) buildEdit(edit);
                                 }
 
-                                for (const page of response?.query?.pages || [ ])
-                                    for (const rev of page?.revisions || [ ]) {
-                                        const edit = data.wikis[hostname].edits[rev.revid];
+                                for (const page of response.query.pages || [ ])
+                                    for (const rev of page.revisions || [ ]) {
+                                        const edit = editMap.get(rev.revid);
                                         edit.A = parser(rev.content);
                                         if (edit.B.d) buildEdit(edit);
                                     }
@@ -387,7 +410,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                         enqueuer([
                             [
-                                hostname,
+                                project,
                                 {
                                     "action": "query",
                                     "prop": "revisions",
@@ -399,15 +422,15 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                                 response => {
                                     if (cancel.cancelled) return;
 
-                                    for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
-                                        const edit = data.wikis[hostname].edits[parentToBase.get(badRev.revid)];
+                                    for (const badRev of Object.values(response.query.badrevids || [ ])) {
+                                        const edit = editMap.get(parentToBase.get(badRev.revid));
                                         edit.B.d = true;
                                         if (edit.A.d) buildEdit(edit);
                                     }
 
-                                    for (const page of response?.query?.pages || [ ])
-                                        for (const rev of page?.revisions || [ ]) {
-                                            const edit = data.wikis[hostname].edits[parentToBase.get(rev.revid)];
+                                    for (const page of response.query.pages || [ ])
+                                        for (const rev of page.revisions || [ ]) {
+                                            const edit = editMap.get(parentToBase.get(rev.revid));
                                             edit.B = parser(rev.content);
                                             if (edit.A.d) buildEdit(edit);
                                         }
@@ -426,7 +449,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 if (parentIds.size > 0)
                     enqueuer([
                         [
-                            hostname,
+                            project,
                             {
                                 "action": "query",
                                 "prop": "revisions",
@@ -438,15 +461,15 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                             response => {
                                 if (cancel.cancelled) return;
 
-                                for (const badRev of Object.values(response?.query?.badrevids || [ ])) {
-                                    const edit = data.wikis[hostname].edits[parentToBase.get(badRev.revid)];
+                                for (const badRev of Object.values(response.query.badrevids || [ ])) {
+                                    const edit = editMap.get(parentToBase.get(badRev.revid));
                                     edit.B.d = true;
                                     if (edit.A.d) buildEdit(edit);
                                 }
 
-                                for (const page of response?.query?.pages || [ ])
-                                    for (const rev of page?.revisions || [ ]) {
-                                        const edit = data.wikis[hostname].edits[parentToBase.get(rev.revid)];
+                                for (const page of response.query.pages || [ ])
+                                    for (const rev of page.revisions || [ ]) {
+                                        const edit = editMap.get(parentToBase.get(rev.revid));
                                         edit.B = parser(rev.content);
                                         if (edit.A.d) buildEdit(edit);
                                     }
@@ -472,7 +495,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
 
                         /* list>globalusers */
                         "gususers": user,
-                        "gusprop": "*",
+                        "gusprop": "editcount|groups|rights|locked",
 
                         /* list>globalblocks */
                         "bgtargets": user,
@@ -485,21 +508,45 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                     response => {
                         if (cancel.cancelled) return;
 
-                        const globalUserInfo = response?.query?.globaluserinfo ?? { };
-                        data.gui = { ...globalUserInfo, merged: undefined };
+                        const globalUserInfo = response.query.globaluserinfo;
+                        const globalUser = response.query.globalusers[0];
 
-                        data.gus = response?.query?.globalusers?.[0] ?? { };
-                        data.bg = response?.query?.globalblocks || [ ];
+                        data.registration = {
+                            project: globalUserInfo.home,
+                            timestamp: globalUserInfo.registration
+                        };
 
-                        (globalUserInfo?.merged ?? [ ]).map(merge => {
-                            const hostname = hostnameCache.renew(merge.url, () => new URL(merge.url).hostname);
-                            data.wikis[hostname] = { hostname, data: merge, edits: { } };
+                        data.edit_count = globalUser.editcount;
+
+                        data.groups = globalUser.groups;
+                        data.rights = globalUser.rights;
+
+                        data.locked = globalUser.locked;
+                        data.blocks = response.query.globalblocks;
+
+                        (globalUserInfo.merged ?? [ ]).map(merge => {
+                            const project = projectCache.renew(merge.url, () => new URL(merge.url).hostname);
+
+                            const projectData = {
+                                project,
+                                code: merge.wiki,
+
+                                registration: {
+                                    method: merge.method,
+                                    timestamp: merge.timestamp
+                                },
+
+                                edit_count: merge.editcount,
+                                edits: [ ],
+                            };
+                            projectsMap.set(project, projectData);
+                            data.projects.push(projectData);
 
                             if (merge.editcount > 0) {
                                 progress.total += Math.ceil(merge.editcount / MAX_USER_CONTRIBUTIONS_PER_REQUEST); // number of requests needed for this user's contributions
                                 progress.total += Math.ceil(merge.editcount / EDIT_BATCH) * 2; // number of requests for getting content of revisions (and their parents)
 
-                                editsEnqueuer(hostname, contribsBody);
+                                editsEnqueuer(project, contribsBody);
                             }
                         });
 
@@ -512,7 +559,7 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                 ],
                 [ "commons.wikimedia.org", uploadsBody, uploadsResponseHandler, uploadsErrorHandler ]
             ])
-                .callback(() => {
+                .callback(async () => {
                     if (cancel.cancelled) return;
 
                     if (progress.done < progress.total) {
@@ -520,7 +567,9 @@ function parseUser(token, user, cancel, progressCallback = () => { }) {
                         progress.update(0);
                     }
 
-                    resolver(data);
+                    const stream = new Blob([ JSON.stringify(data) ]).stream().pipeThrough(new CompressionStream("gzip"));
+                    const buffer = await new Response(stream).arrayBuffer();
+                    resolver(btoa(new Uint8Array(buffer).reduce((acc, byte) => acc + String.fromCharCode(byte), "")));
                 });
         })
         .catch(error => {
@@ -538,7 +587,7 @@ wss.on("connection", ws => {
     ws.on("message", data => {
         if (cancel.cancelled) return;
 
-        const [ token, usernames ] = data.toString().split(/:(.*)/s);
+        const [ token, usernames ] = data.toString().trim().split(/:(.*)/s);
         if (!token)
             return ws.send(JSON.stringify({ event: "error", error: "Invalid token" }));
         if (!usernames)
@@ -554,9 +603,7 @@ wss.on("connection", ws => {
                 .catch(error => ws.send(JSON.stringify({ event: "error", error: error.message })));
         }
     });
-    ws.on("close", () => {
-        cancel.cancelled = true;
-    });
+    ws.on("close", () => { cancel.cancelled = true; });
 });
 
 server.listen(3000, () => console.log("Server running on ws://localhost:3000"));
