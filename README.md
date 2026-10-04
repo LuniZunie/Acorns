@@ -57,7 +57,7 @@ getUserData(TOKEN, [ /* usernames go here */ ], function callback({ status, data
         case "progress": {
             /*
                 data is
-                    A decimal from 0 to 1 (inclusive-inclusive) representing the progress of the request.
+                    A decimal from 0 to 1 (inclusive) representing the progress of the request.
             */
         } break;
         case "done": {
