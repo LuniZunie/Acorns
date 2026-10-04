@@ -48,7 +48,7 @@ const TOKEN = "";
     The server automatically does the following for usernames:
     1. Removes leading and trailing whitespace.
     2. Replaces underscores with spaces.
-    3. Removes leading namespace prefixes (e.g., "User:").
+    3. Removes namespace prefixes (e.g., "User:").
     4. Capitalizes the first letter of the username.
     5. Removes duplicate usernames
 */
