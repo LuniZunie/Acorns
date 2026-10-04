@@ -93,7 +93,7 @@ getUserData(TOKEN, [ /* usernames go here */ ], function callback({ status, data
 
 Parsed users with return the following data structure (note the information is mock data):
 
-```json
+```jsonc
 {
     "user": "Example",
     "registration": { /* Global registration info */
