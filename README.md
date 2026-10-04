@@ -2,7 +2,7 @@
 
 A Wikipedia SPI tool.
 
-## Server Setup
+## Server
 
 #### Clone the repository
 ```bash
@@ -20,46 +20,171 @@ npm install
 npm start
 ```
 
-## Communication with the Server
+You should see the following in the console:
+```
+WebSocket server running on ws://localhost:3000
+HTTP server running on http://localhost:3000
+```
 
-Make sure to replace `${token}` and `${username}` with the actual token and username when connecting to the WebSocket server.
-Usernames should be separated by the `|` character if you want to query multiple users at once.
+## Client
+
+### Checking connection
+
+To check the connection to the server, open `http://localhost:3000` in your web browser.
+It will display "Connected to server." if the connection is successful.
+
+### Getting user data
+
+The following code demonstrates how to communicate with the server from the client side.
 
 ```javascript
-const websocket = new WebSocket("ws://localhost:3000");
-websocket.addEventListener("open", () => { websocket.send(`${token}:${username}`); });
-websocket.addEventListener("message", ({ data }) => {
-    const json = JSON.parse(data);
-    switch (json.event) {
-        case "progress": {
-            const { done, total } = json.progress;
+import getUserData from "/script/get-user-data.js";
 
-            /* ... */
+const TOKEN = "";
+
+/*
+    Username Note:
+
+    The server automatically does the following for usernames:
+    1. Removes leading and trailing whitespace.
+    2. Replaces underscores with spaces.
+    3. Removes leading namespace prefixes (e.g., "User:").
+    4. Capitalizes the first letter of the username.
+    5. Removes duplicate usernames
+*/
+getUserData(TOKEN, [ /* usernames go here */ ], function callback({ status, data }) {
+    switch (status) {
+        case "progress": {
+            /*
+                data is
+                    A decimal from 0 to 1 (inclusive-inclusive) representing the progress of the request.
+            */
         } break;
         case "done": {
-            (async str => {
-                // Decode the base64-encoded gzipped data into JSON
-                const bin = atob(str);
-                const len = bin.length;
-
-                const buffer = new Uint8Array(len);
-                for (let i = 0; i < len; i++)
-                    buffer[i] = bin.charCodeAt(i);
-
-                const stream = new Blob([ buffer ]).stream().pipeThrough(new DecompressionStream("gzip"));
-                const decompressed = await new Response(stream).arrayBuffer();
-                const data = JSON.parse(new TextDecoder().decode(decompressed));
-
-                /* ... */
-            })(json.data);
+            /*
+                data is
+                    An array of the parsed users in the same order as the requested usernames.
+                    If a user does not exist, the corresponding entry is removed.
+            */
         } break;
-        case "error": {
-            const { error } = json;
-
-            /* ... */
+        case "script-error": {
+            /*
+                data is
+                    A string containing the error message from the server.
+            */
+        } break;
+        case "websocket-close": {
+            /*
+                data is
+                    undefined
+            */
+        } break;
+        case "websocket-error": {
+            /*
+                data is
+                    A string containing the error message from the WebSocket.
+            */
         } break;
     }
 });
-websocket.addEventListener("close", () => { console.log("Connection closed"); });
-websocket.addEventListener("error", error => { console.error("Connection error:", error); });
+```
+
+### Using the retrieved user data
+
+Parsed users with return the following data structure (note the information is mock data):
+
+```json
+{
+    "user": "Example",
+    "registration": { /* Global registration info */
+        "project": "metawiki",
+        "timestamp": "1970-01-01T00:00:00Z"
+    },
+    "locked": true, /* Globally locked? */
+    "blocks": [ /* Global blocks info */
+        {
+            "id": "0",
+            "anononly": false,
+            "account-creation-disabled": true,
+            "block-email": false,
+            "autoblocking-enabled": true,
+            "automatic": false,
+            "by": "WMF-Office",
+            "bywiki": "metawiki",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "expiry": "infinity",
+            "reason": "Testing"
+        }
+    ],
+    "edit_count": 42, /* Global edit count */
+    "groups": [ /* Global groups info */
+        "global-rollbacker"
+    ],
+    "rights": [ /* Global rights info */
+        "rollback",
+        "skipcaptcha"
+    ],
+    "uploads": [
+        {
+            "logid": 0,
+            "title": "File:Example.png",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "comment": "Uploaded an example file with UploadWizard",
+            "tags": [
+                "uploadwizard",
+            ]
+        }
+    ],
+    "projects": [ /* All projects they are registered on */
+        {
+            "project": "meta.wikipedia.org",
+            "code": "metawiki",
+            "registration": {
+                "method": "login",
+                "timestamp": "1970-01-01T00:00:00Z"
+            },
+            "blocks": [
+                {
+                    "id": "0",
+                    "by": "Administrator",
+                    "expiry": "infinity",
+                    "duration-l10n": "infinite",
+                    "reason": "Testing",
+                    "automatic": false,
+                    "anononly": false,
+                    "nocreate": false,
+                    "autoblock": false,
+                    "noemail": false,
+                    "hidden": false,
+                    "block-hidden": false,
+                    "allowusertalk": false,
+                    "partial": false
+                }
+            ],
+            "edit_count": 1,
+            "edits": [
+                {
+                    "title": "Main Page",
+                    "revid": 1,
+                    "parentid": 0,
+                    "timestamp": "1970-01-01T00:00:00Z",
+                    "comment": "Welcome to Wikipedia!",
+                    "tags": [
+                        "mobile edit",
+                    ],
+                    "sizediff": 21,
+                    "categories": [ "Wikimedia" ], /* Categories on the page at the time */
+                    "images": { /* Images CAN have false positives */
+                        "+": [ "Welcome.png" ], /* Added images */
+                        "-": [ "OldWelcome.png" ] /* Removed images */
+                    },
+                    "links": {
+                        "+": [ "https://meta.wikipedia.org/" ], /* Added links */
+                        "-": [ "https://www.google.com/" ] /* Removed links */
+                    }
+                }
+            ]
+        }
+    ]
+}
 ```
