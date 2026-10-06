@@ -1,0 +1,140 @@
+@use "tokens" as *;
+
+#input-screen {
+    box-sizing: border-box;
+    width: min(520px, calc(100% - 32px));
+    margin: 0;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    font-family: system-ui, sans-serif;
+    color: $text;
+
+    label,
+    p,
+    .field-heading {
+        margin: 12px 0 2px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    p {
+        font-size: 0.9em;
+        line-height: 1;
+
+    }
+
+    .field-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    input:focus-visible {
+        outline: 2px solid $accent;
+        outline-offset: 1px;
+    }
+
+    button#submit-temp-token {
+        margin-top: 24px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        background: $accent;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+
+        &:hover {
+            background: $accent-hover;
+        }
+    }
+
+    .help {
+        position: relative;
+        display: flex;
+        font-weight: normal;
+
+        &-button {
+            display: flex;
+            margin-left: 6px;
+            padding: 0;
+            line-height: 1;
+            border: none;
+            background: none;
+            color: $muted;
+            font-size: inherit;
+            cursor: pointer;
+
+            &:hover,
+            &[aria-expanded="true"] {
+                color: $accent;
+            }
+        }
+    }
+
+    .tooltip {
+        position: absolute;
+        right: -8px;
+        bottom: calc(100% + 10px);
+        z-index: 10;
+        width: min(300px, calc(100vw - 48px));
+        padding: 12px 14px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background: #fff;
+        color: $text;
+        font-size: 0.85rem;
+        line-height: 1.6;
+        text-align: left;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+
+        &[hidden] {
+            display: none;
+        }
+
+        &::before,
+        &::after {
+            content: "";
+            position: absolute;
+            right: 12px;
+            border: 7px solid transparent;
+        }
+
+        &::before {
+            top: 100%;
+            border-top-color: #ccc;
+        }
+
+        &::after {
+            top: calc(100% - 1px);
+            border-top-color: #fff;
+        }
+
+        code {
+            padding: 1px 4px;
+            border-radius: 3px;
+            background: #eef1f6;
+            color: #1a3d7c;
+        }
+
+        ul {
+            padding-inline-start: 20px;
+            margin: 0;
+        }
+    }
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

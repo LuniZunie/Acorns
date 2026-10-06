@@ -3,6 +3,7 @@ class TempMap {
 
     #store;
     #timeouts;
+    #timeoutCallbacks;
 
     constructor(timeout) {
         if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 0))
@@ -12,6 +13,7 @@ class TempMap {
 
         this.#store = new Map();
         this.#timeouts = new Map();
+        this.#timeoutCallbacks = new Map();
     }
 
     #clearTimeout(key) {
@@ -29,6 +31,7 @@ class TempMap {
 
         this.#store.clear();
         this.#timeouts.clear();
+        this.#timeoutCallbacks.clear();
     }
 
     has(key) {
@@ -51,6 +54,13 @@ class TempMap {
         if (this.#timeout !== undefined)
             this.#timeouts.set(key, setTimeout(() => {
                 this.delete(key);
+
+                const timeoutCallbacks = this.#timeoutCallbacks.get(key);
+                if (timeoutCallbacks) {
+                    for (const callback of timeoutCallbacks)
+                        callback();
+                    this.#timeoutCallbacks.delete(key);
+                }
             }, this.#timeout));
 
         return this;
@@ -66,6 +76,13 @@ class TempMap {
             if (this.#timeout !== undefined)
                 this.#timeouts.set(key, setTimeout(() => {
                     this.delete(key);
+
+                    const timeoutCallbacks = this.#timeoutCallbacks.get(key);
+                    if (timeoutCallbacks) {
+                        for (const callback of timeoutCallbacks)
+                            callback();
+                        this.#timeoutCallbacks.delete(key);
+                    }
                 }, this.#timeout));
 
             return this.#store.get(key);
@@ -83,13 +100,18 @@ class TempMap {
     }
 
     delete(key) {
-        if (!this.#store.has(key))
-            return false;
+        if (!this.#store.has(key)) return false;
 
         this.#store.delete(key);
         this.#clearTimeout(key);
+        this.#timeoutCallbacks.delete(key);
 
         return true;
+    }
+
+    addTimeoutListener(key, callback) {
+        if (!this.#timeoutCallbacks.has(key)) this.#timeoutCallbacks.set(key, [ ]);
+        this.#timeoutCallbacks.get(key).push(callback);
     }
 
     get timeout() {

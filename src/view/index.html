@@ -5,10 +5,40 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Acorns</title>
 
-        <link rel="stylesheet" href="/style/styles.css">
-        <script defer src="/script/server-test.js"></script>
+        <!-- Font Awesome Version 7.3.1 (Latest) -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" integrity="sha512-Rl9V6K6zGubt3V0LpC6P0fEaN7kH8w19MszNre8A6JcO40eYc1B0bCgX05mK6zGvLt..." crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+        <link rel="stylesheet" href="/style/main.css" />
+        <link rel="stylesheet" href="/style/input-screen.css" />
+        <link rel="stylesheet" href="/style/elements/pill-input.css" />
+
+        <script src="/script/elements/pill-input.js"></script>
+        <script src="/script/elements/help-tooltip.js" defer></script>
+
+        <script type="module" src="/script/main.js"></script>
     </head>
     <body>
-        <p>Not connected to server.</p>
+        <div id="input-screen">
+            <p>Users to parse:</p>
+            <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
+
+            <div class="field-heading">
+                <span>Servers to parse:</span>
+                <div class="help">
+                    <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="server-help"><i class="fas fa-circle-question"></i></button>
+                    <div id="server-help" class="tooltip" role="tooltip" hidden>
+                        <ul>
+                            <li><code>*</code> - Include every project</li>
+                            <li><code>meta.wikimedia.org</code> - Include a project</li>
+                            <li><code>-meta.wikimedia.org</code> - Exclude a project</li>
+                            <li>Rules are applied in order</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <pill-input id="server-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
+
+            <button id="submit-temp-token">Submit</button>
+        </div>
     </body>
 </html>

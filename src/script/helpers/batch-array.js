@@ -1,7 +1,5 @@
-function* batchArray(items, batchSize) {
+export function* batchArray(items, batchSize) {
     const length = items.length;
     for (let i = 0; i < length; i += batchSize)
         yield items.slice(i, i + batchSize);
 }
-
-export default batchArray;

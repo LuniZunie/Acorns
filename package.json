@@ -1,11 +1,12 @@
 {
   "dependencies": {
-    "fetch-cookie": "^3.2.0",
-    "tough-cookie": "^6.0.2",
+    "sass": "^1.105.1",
     "ws": "^8.22.0"
   },
   "scripts": {
-    "start": "node index.js"
+    "compile": "sass --no-source-map src/style/main.scss:src/style/main.css src/style/input-screen.scss:src/style/input-screen.css src/style/elements/pill-input.scss:src/style/elements/pill-input.css",
+    "start": "npm run compile && node index.js"
   },
   "type": "module"
 }
+
