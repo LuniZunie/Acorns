@@ -144,7 +144,7 @@ wss.on("connection", ws => {
                 ws.send("pong");
             } break;
             case "client": {
-                ws.send(JSON.stringify({ event: "client", data: "c2513c585c4e5227f04b90cdf6cdd479" }));
+                ws.send(JSON.stringify({ event: "client", data: CLIENT }));
             } break;
             case "auth": {
                 if (OAuthCallbackCache.has(state)) return;
