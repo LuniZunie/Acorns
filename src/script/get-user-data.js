@@ -1,3 +1,4 @@
+import { normalizeUser } from "./helpers/normalize-user.js";
 import { addArrayToArray } from "./helpers/add-array-to-array.js";
 import { batchArray } from "./helpers/batch-array.js";
 import { Time } from "./helpers/time.js";
@@ -20,11 +21,6 @@ const parseWikitext = wikitext => {
         l: (wikitext.match(rLINK) || [ ]).map(match => match.trim().replaceAll("_", " ")),
         d: true
     };
-};
-
-const normalizeUser = user => {
-    const temp = user.trim().replaceAll("_", " ").split(":").pop().trim();
-    return `${temp.charAt(0).toUpperCase()}${temp.slice(1)}`;
 };
 
 const waitUntil = async time => { // makes sure we never undershoot the wait even slightly
@@ -60,7 +56,10 @@ const scheduler = {
                         if (this.queue[i].priority > this.queue[best].priority) best = i;
                     const [ item ] = this.queue.splice(best, 1);
 
-                    if (item.cancelled()) { item.settle(); continue; }
+                    if (item.cancelled()) {
+                        item.settle();
+                        continue;
+                    }
 
                     await waitUntil(this.last + this.rateLimit);
                     this.last = performance.now();
@@ -109,6 +108,12 @@ export default function(getToken, users, projectRules, callback = () => { }) {
 
     users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(normalizeUser).filter(Boolean)));
 
+    if (users.length === 0) {
+        callback({ status: "progress", data: 1 });
+        callback({ status: "done", data: [ ] });
+        return { close: () => { } };
+    }
+
     const projects = { all: false, include: new Set(), exclude: new Set() };
     for (const rule of projectRules) {
         if (rule === "*") {
@@ -128,12 +133,6 @@ export default function(getToken, users, projectRules, callback = () => { }) {
         }
     }
 
-    if (users.length === 0 || (!projects.all && projects.include.size === 0)) {
-        callback({ status: "progress", data: 1 });
-        callback({ status: "done", data: [ ] });
-        return { close: () => { } };
-    }
-
     const cancel = { cancelled: false };
     let finished = false;
     const fail = error => {
@@ -147,8 +146,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
     let lastProgress = 0;
     const reportProgress = (user, done, total) => {
         if (done === undefined && total === undefined) {
-            if (!progressMap.has(user)) return;
-            const temp = progressMap.get(user);
+            const temp = progressMap.get(user) ?? { done: 1, total: 1 };
             done = temp.done, total = temp.total;
         }
         progressMap.set(user, { done, total });
@@ -412,7 +410,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
                 },
                 response => {
                     const globalUserInfo = response.query.globaluserinfo;
-                    if (globalUserInfo.missing === true) return;
+                    if (globalUserInfo.missing === true) return resolve(null);
 
                     const globalUser = response.query.globalusers[0];
                     data.projects = [ ];
@@ -473,12 +471,15 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             }));
         })
         .then(results => {
-            if (!results || finished) return;
+            if (cancel.cancelled) return;
+            if (finished) return;
             finished = true;
 
             callback({ status: "done", data: results.filter(Boolean) });
         })
-        .catch(fail);
+        .catch(error => {
+            fail(error);
+        });
 
     return { close: () => { cancel.cancelled = true; } };
 }

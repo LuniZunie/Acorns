@@ -19,13 +19,28 @@
     cursor: text;
     transition: border-color 150ms ease, box-shadow 150ms ease;
 
-    &:hover {
-        border-color: #9aa9bd;
+    &:not(.disabled) {
+        &:hover {
+            border-color: #9aa9bd;
+        }
+
+        &:focus-within {
+            border-color: $accent;
+            box-shadow: 0 0 0 3px rgba($accent, 0.16);
+        }
     }
 
-    &:focus-within {
-        border-color: $accent;
-        box-shadow: 0 0 0 3px rgba($accent, 0.16);
+    &.disabled {
+        background: #f5f7fa;
+        cursor: not-allowed;
+
+        & > .text {
+            cursor: not-allowed;
+        }
+
+        & > .pills > .pill > .remove {
+            pointer-events: none;
+        }
     }
 
     & > .pills {

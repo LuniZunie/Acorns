@@ -1,8 +1,29 @@
 @use "tokens" as *;
 
-#input-screen {
-    box-sizing: border-box;
+#input-screen-wrap {
+    position: relative;
     width: min(520px, calc(100% - 32px));
+}
+
+#input-screen-status {
+    position: absolute;
+    top: calc(100% + 14px);
+    left: 0;
+    right: 0;
+    font: 0.9rem system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: $muted;
+    text-align: center;
+
+    &.hidden {
+        visibility: hidden;
+    }
+}
+
+#input-screen {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
     margin: 0;
     padding: 24px 28px;
     display: flex;
@@ -40,19 +61,66 @@
         outline-offset: 1px;
     }
 
-    button#submit-temp-token {
+    button {
         margin-top: 24px;
         padding: 10px 16px;
         border: none;
         border-radius: 6px;
-        background: $accent;
         color: #fff;
         font: inherit;
         font-weight: 600;
         cursor: pointer;
+        transition: background 0.2s ease;
 
-        &:hover {
-            background: $accent-hover;
+        &.hidden {
+            display: none;
+        }
+
+        &#input-screen-submit {
+            background: $accent;
+            &:hover {
+                background: $accent-hover;
+            }
+        }
+
+        &#input-screen-cancel {
+            background: $cancel;
+            &:hover {
+                background: $cancel-hover;
+            }
+        }
+    }
+
+    #input-screen-progress {
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        overflow: visible;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+
+        path {
+            fill: none;
+            stroke: $accent;
+            stroke-width: 3px;
+            stroke-linecap: round;
+            stroke-dasharray: 1 1;
+            stroke-dashoffset: 1;
+        }
+
+        &.success {
+            path {
+                stroke: $success;
+            }
+        }
+        &.error {
+            path {
+                stroke: $cancel;
+            }
+        }
+
+        &.hidden {
+            opacity: 0;
         }
     }
 

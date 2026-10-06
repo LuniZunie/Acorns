@@ -1,34 +1,38 @@
-const helpWidgets = Array.from(document.querySelectorAll(".help")).map(help => {
-    const button = help.querySelector(".help-button");
-    const tooltipId = button?.getAttribute("aria-controls");
-    const tooltip = tooltipId && document.getElementById(tooltipId);
+import { $, $$ } from "../helpers/query-selector.js";
 
-    if (!button || !tooltip)
+const $$widgets = Array.from($$(".help")).map($help => {
+    const $button = $(".help-button", $help);
+    const tooltipId = $button?.getAttribute("aria-controls");
+    const $tooltip = tooltipId && $(`#${tooltipId}`);
+
+    if (!$button || !$tooltip)
         throw new Error("Each .help widget must have a .help-button and its controlled tooltip.");
 
     const setOpen = open => {
-        tooltip.hidden = !open;
-        button.setAttribute("aria-expanded", String(open));
+        $tooltip.hidden = !open;
+        $button.setAttribute("aria-expanded", String(open));
     };
 
-    button.addEventListener("click", () => setOpen(tooltip.hidden));
+    $button.addEventListener("click", () => setOpen($tooltip.hidden));
 
-    return { help, button, tooltip, setOpen };
+    return { help: $help, button: $button, tooltip: $tooltip, setOpen };
 });
 
 document.addEventListener("click", event => {
-    for (const widget of helpWidgets)
-        if (!widget.help.contains(event.target))
-            widget.setOpen(false);
+    for (const $widget of $$widgets)
+        if (!$widget.help.contains(event.target))
+            $widget.setOpen(false);
 });
 
 document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
 
-    for (const widget of helpWidgets) {
-        if (widget.tooltip.hidden) continue;
-        const restoreFocus = widget.help.contains(document.activeElement);
-        widget.setOpen(false);
-        if (restoreFocus) widget.button.focus();
+    for (const $widget of $$widgets) {
+        if ($widget.tooltip.hidden) continue;
+
+        const restoreFocus = $widget.help.contains(document.activeElement);
+        $widget.setOpen(false);
+
+        if (restoreFocus) $widget.button.focus();
     }
 });

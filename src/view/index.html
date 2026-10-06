@@ -13,11 +13,12 @@
         <link rel="stylesheet" href="/style/elements/pill-input.css" />
 
         <script src="/script/elements/pill-input.js"></script>
-        <script src="/script/elements/help-tooltip.js" defer></script>
+        <script type="module" src="/script/elements/help-tooltip.js"></script>
 
         <script type="module" src="/script/main.js"></script>
     </head>
     <body>
+        <div id="input-screen-wrap">
         <div id="input-screen">
             <p>Users to parse:</p>
             <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
@@ -38,7 +39,15 @@
             </div>
             <pill-input id="server-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
 
-            <button id="submit-temp-token">Submit</button>
+            <button id="input-screen-submit">Submit</button>
+            <button id="input-screen-cancel" class="hidden">Cancel</button>
+
+            <svg id="input-screen-progress" class="hidden" aria-hidden="true">
+                <path pathLength="1"></path>
+                <path pathLength="1"></path>
+            </svg>
+        </div>
+        <span id="input-screen-status" class="hidden"></span>
         </div>
     </body>
 </html>
