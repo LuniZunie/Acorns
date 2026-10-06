@@ -72,18 +72,24 @@
         cursor: pointer;
         transition: background 0.2s ease;
 
+        &.disabled {
+            pointer-events: none;
+
+            background: $muted;
+        }
+
         &.hidden {
             display: none;
         }
 
-        &#input-screen-submit {
+        &#input-screen-submit:not(.disabled) {
             background: $accent;
             &:hover {
                 background: $accent-hover;
             }
         }
 
-        &#input-screen-cancel {
+        &#input-screen-cancel:not(.disabled) {
             background: $cancel;
             &:hover {
                 background: $cancel-hover;

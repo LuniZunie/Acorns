@@ -77,22 +77,23 @@ const setProgress = (value, instant = false) => {
     }
 };
 
-$submit.addEventListener("click", () => {
-    $users.disable();
-    $servers.disable();
+new OAuth().then(async function(oauth) {
+    await oauth.authenticate();
 
-    $submit.classList.add("hidden");
-    $cancel.classList.remove("hidden");
+    $submit.classList.remove("disabled");
+    $submit.addEventListener("click", () => {
+        $users.disable();
+        $servers.disable();
 
-    setProgress(0, true);
+        $submit.classList.add("hidden");
+        $cancel.classList.remove("hidden");
 
-    $progress.classList.remove("error");
-    $progress.classList.remove("hidden");
+        setProgress(0, true);
 
-    $status.classList.remove("hidden");
+        $progress.classList.remove("error");
+        $progress.classList.remove("hidden");
 
-    new OAuth().then(async function(oauth) {
-        await oauth.authenticate();
+        $status.classList.remove("hidden");
 
         const { close } = getUserData(() => oauth.access(), $users.values(), $servers.values(), function callback({ status, data }) {
             switch (status) {
@@ -122,7 +123,7 @@ $submit.addEventListener("click", () => {
             }
         });
 
-        $cancel.addEventListener("click", () => {
+        $cancel.onclick = () => {
             close();
 
             progressCalback = null;
@@ -135,6 +136,6 @@ $submit.addEventListener("click", () => {
 
             $users.enable();
             $servers.enable();
-        });
-    }).catch(error => console.error(error));
-});
+        };
+    });
+}).catch(error => console.error(error));
