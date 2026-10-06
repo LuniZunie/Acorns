@@ -39,8 +39,6 @@ class PillInput extends HTMLElement {
         this.#applyDisabled();
     }
 
-    // Mirrors classList.toggle: pass true/false to force a state.
-    // Returns the new disabled state.
     toggle(force) {
         this.#disabled = force === undefined ? !this.#disabled : !!force;
         this.#applyDisabled();
@@ -165,6 +163,11 @@ class PillInput extends HTMLElement {
         $pill.append($label, $remove);
         this.#$pills.append($pill);
         this.#pillsChanged();
+    }
+
+    paste(text) {
+        if (this.#disabled) return;
+        this.#consume(text, true);
     }
 
     values() {

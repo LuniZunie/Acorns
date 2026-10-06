@@ -4,8 +4,11 @@ import { normalizeUser } from "./helpers/normalize-user.js";
 import { normalizeProject } from "./helpers/normalize-project.js";
 
 import { OAuth } from "./core/oauth.js";
+import { LoadResults, ChangeTab } from "./core/content.js";
 
 import getUserData from "./get-user-data.js";
+
+const params = new URLSearchParams(location.search);
 
 const $users = $("#user-pill-input");
 $users.addEventListener("pills-changed", () => {
@@ -15,6 +18,8 @@ $users.addEventListener("pills-changed", () => {
         $child.value = normalized;
     });
 });
+if (params.has("user")) $users.clear();
+params.getAll("user").forEach(user => $users.paste(user));
 
 const $project = $("#project-pill-input");
 $project.addEventListener("pills-changed", () => {
@@ -24,6 +29,8 @@ $project.addEventListener("pills-changed", () => {
         $child.value = normalized;
     });
 });
+if (params.has("project")) $project.clear();
+params.getAll("project").forEach(project => $project.paste(project));
 
 const $submit = $("#input-screen-submit");
 const $cancel = $("#input-screen-cancel");
@@ -108,7 +115,8 @@ new OAuth().then(async function(oauth) {
                     setProgress(data);
                 } break;
                 case "done": {
-                    if (data.length === 0) {
+                    const { results, url } = data;
+                    if (data.results.length === 0) {
                         $progress.classList.add("error");
                         progressCalback = () => {
                             $status.textContent = "No data returned";
@@ -116,8 +124,26 @@ new OAuth().then(async function(oauth) {
                     } else {
                         $progress.classList.add("success");
                         progressCalback = () => {
-                            $status.textContent = "Data loaded successfully";
-                            console.log(data);
+                            history.pushState({ action: "reload" }, "", url);
+                            window.addEventListener("popstate", event => {
+                                if (event.state?.action === "reload") location.reload();
+                            });
+
+                            LoadResults(results);
+
+                            $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
+                            if (params.has("tab"))
+                                ChangeTab(params.get("tab"));
+
+                            if (!$("#tabs > .tab-button.active"))
+                                ChangeTab($("#tabs > .tab-button").dataset.tab);
+
+                            $$("#tabs > .tab-button").forEach($tab => {
+                                $tab.addEventListener("click", () => ChangeTab($tab.dataset.tab));
+                            });
+
+                            $("#input-screen-wrap").classList.add("hidden");
+                            $("#content").classList.remove("hidden");
                         };
                     }
                 } break;
@@ -146,4 +172,6 @@ new OAuth().then(async function(oauth) {
             $project.enable();
         };
     });
+
+    if (params.get("submit") === "true") $submit.click();
 }).catch(error => console.error(error));

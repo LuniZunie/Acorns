@@ -3,6 +3,12 @@
 #input-screen-wrap {
     position: relative;
     width: min(520px, calc(100% - 32px));
+    transition: opacity 0.3s ease;
+
+    &.hidden {
+        pointer-events: none;
+        opacity: 0;
+    }
 }
 
 #input-screen-status {

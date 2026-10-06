@@ -88,8 +88,10 @@ new OAuth().then(async function(oauth) {
             case "done": {
                 /*
                     data is
-                        An array of the parsed users in the same order as the requested usernames.
-                        If a user does not exist, the corresponding entry is removed.
+                        An object with two properties:
+                            results - An array of user data objects for each user that was successfully parsed.
+                                If a user does not exist, the corresponding entry is removed.
+                            url - A URL that can be used to make the same request.
                 */
             } break;
             case "error": {

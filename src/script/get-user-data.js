@@ -41,7 +41,7 @@ const scheduler = {
     ongoing: new Set(),
 
     enqueue(items) {
-        this.queue.push(...items);
+        addArrayToArray(this.queue, items);
         if (!this.running) this.run();
     },
 
@@ -52,10 +52,12 @@ const scheduler = {
                 while (this.queue.length > 0) {
                     // highest priority first; first-queued wins ties
                     let best = 0;
-                    for (let i = 1; i < this.queue.length; i++)
-                        if (this.queue[i].priority > this.queue[best].priority) best = i;
-                    const [ item ] = this.queue.splice(best, 1);
+                    const length = this.queue.length;
+                    if (length < 1e4)
+                        for (let i = 1; i < this.queue.length; i++)
+                            if (this.queue[i].priority > this.queue[best].priority) best = i;
 
+                    const [ item ] = this.queue.splice(best, 1);
                     if (item.cancelled()) {
                         item.settle();
                         continue;
@@ -475,7 +477,29 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             if (finished) return;
             finished = true;
 
-            callback({ status: "done", data: results.filter(Boolean) });
+            results = results.filter(Boolean);
+            const url = new URL(location.href);
+
+            url.searchParams.delete("user");
+            url.searchParams.set("user", results.map(user => user.user).join(","));
+
+            const projectParam = [ ];
+            if (projects.all) projectParam.push("*");
+            for (const project of projects.include) projectParam.push(project);
+            for (const project of projects.exclude) projectParam.push(`-${project}`);
+            url.searchParams.delete("project");
+            url.searchParams.set("projet", projectParam.join(","))
+
+            url.searchParams.delete("submit");
+            url.searchParams.set("submit", "true");
+
+            if (url.searchParams.has("tab")) {
+                const tab = url.searchParams.get("tab");
+                url.searchParams.delete("tab");
+                url.searchParams.set("tab", tab);
+            }
+
+            callback({ status: "done", data: { results, url: url.toString() } });
         })
         .catch(error => {
             fail(error);
