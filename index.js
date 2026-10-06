@@ -57,7 +57,7 @@ const server = createServer(async (req, res) => {
     }
 
     let pathname;
-    try { pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname); }
+    try { pathname = decodeURIComponent(new URL(req.url, "http://0.0.0.0:8000").pathname); }
     catch {
         res.writeHead(400);
         return res.end("Bad Request");
@@ -71,7 +71,7 @@ const server = createServer(async (req, res) => {
                 return res.end("Too Many Requests");
             }
 
-            const url = new URL(req.url, "http://localhost");
+            const url = new URL(req.url, "http://0.0.0.0:8000");
 
             const code = url.searchParams.get("code");
             const state = url.searchParams.get("state");
@@ -159,7 +159,7 @@ wss.on("connection", ws => {
     });
 });
 
-server.listen(3000, () => {
-    console.log("WebSocket server running on ws://localhost:3000");
-    console.log("HTTP server running on http://localhost:3000");
+server.listen(8000, "0.0.0.0", () => {
+    console.log("HTTP server running on http://0.0.0.0:8000");
+    console.log("WebSocket server running on ws://0.0.0.0:8000");
 });
