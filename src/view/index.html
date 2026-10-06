@@ -27,14 +27,14 @@
 
         <div id="input-screen-wrap">
             <div id="input-screen">
-                <p>Users to parse:</p>
+                <p>Users</p>
                 <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
 
                 <div class="field-heading">
-                    <span>Servers to parse:</span>
+                    <span>Projects</span>
                     <div class="help">
-                        <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="server-help"><i class="fas fa-circle-question"></i></button>
-                        <div id="server-help" class="tooltip" role="tooltip" hidden>
+                        <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="project-help"><i class="fas fa-circle-question"></i></button>
+                        <div id="project-help" class="tooltip" role="tooltip" hidden>
                             <ul>
                                 <li><code>*</code> - Include every project</li>
                                 <li><code>meta.wikimedia.org</code> - Include a project</li>
@@ -44,7 +44,7 @@
                         </div>
                     </div>
                 </div>
-                <pill-input id="server-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
+                <pill-input id="project-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
 
                 <button id="input-screen-submit" class="disabled">Submit</button>
                 <button id="input-screen-cancel" class="hidden">Cancel</button>
@@ -56,7 +56,7 @@
             </div>
 
             <span id="input-screen-status" class="hidden"></span>
-            <span id="credits">Designed by <a href="https://en.wikipedia.org/wiki/User:LuniZunie" target="_blank">LuniZunie</a> and <a href="https://en.wikipedia.org/wiki/User:Vermont" target="_blank">Vermont</a>. Logo by <a href="https://en.wikipedia.org/wiki/User:Giraffer" target="_blank">Giraffer</a>.</span>
+            <span id="credits">Designed by <a rel="noopener noreferrer" href="https://en.wikipedia.org/wiki/User:LuniZunie" target="_blank">LuniZunie</a> and <a rel="noopener noreferrer" href="https://en.wikipedia.org/wiki/User:Vermont" target="_blank">Vermont</a>. Logo by <a rel="noopener noreferrer" href="https://en.wikipedia.org/wiki/User:Giraffer" target="_blank">Giraffer</a>.</span>
         </div>
     </body>
 </html>

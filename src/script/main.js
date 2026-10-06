@@ -1,7 +1,7 @@
 import { $, $$ } from "./helpers/query-selector.js";
 
 import { normalizeUser } from "./helpers/normalize-user.js";
-import { normalizeServer } from "./helpers/normalize-server.js";
+import { normalizeProject } from "./helpers/normalize-project.js";
 
 import { OAuth } from "./core/oauth.js";
 
@@ -16,10 +16,10 @@ $users.addEventListener("pills-changed", () => {
     });
 });
 
-const $servers = $("#server-pill-input");
-$servers.addEventListener("pills-changed", () => {
-    $servers.children.forEach($child => {
-        const normalized = normalizeServer($child.value);
+const $project = $("#project-pill-input");
+$project.addEventListener("pills-changed", () => {
+    $project.children.forEach($child => {
+        const normalized = normalizeProject($child.value);
         if (!normalized) $child.remove();
         $child.value = normalized;
     });
@@ -51,7 +51,11 @@ let progressTarget = 0, progressShown = 0, progressFrame = null, progressLast = 
 let progressCalback = null;
 const PROGRESS_RATE = 4;
 const renderProgress = () => {
-    $progressBars.forEach($bar => $bar.style.strokeDashoffset = 1 - progressShown);
+    const dashOffset = 1 - progressShown;
+    $progressBars.forEach($bar => {
+        $bar.classList.toggle("hidden", dashOffset === 1);
+        $bar.style.strokeDashoffset = dashOffset;
+    });
     $status.textContent = `${Math.trunc(progressShown * 100)}%`;
 };
 const tickProgress = now => {
@@ -84,20 +88,21 @@ new OAuth().then(async function(oauth) {
     $submit.classList.remove("disabled");
     $submit.addEventListener("click", () => {
         $users.disable();
-        $servers.disable();
+        $project.disable();
 
         $submit.classList.add("hidden");
         $cancel.classList.remove("hidden");
 
         setProgress(0, true);
 
+        $progress.classList.remove("success");
         $progress.classList.remove("error");
         $progress.classList.remove("hidden");
 
         $status.classList.remove("hidden");
         $credits.classList.add("hidden");
 
-        const { close } = getUserData(() => oauth.access(), $users.values(), $servers.values(), function callback({ status, data }) {
+        const { close } = getUserData(() => oauth.access(), $users.values(), $project.values(), function callback({ status, data }) {
             switch (status) {
                 case "progress": {
                     setProgress(data);
@@ -138,7 +143,7 @@ new OAuth().then(async function(oauth) {
             $credits.classList.remove("hidden");
 
             $users.enable();
-            $servers.enable();
+            $project.enable();
         };
     });
 }).catch(error => console.error(error));
