@@ -67,10 +67,17 @@ const TOKEN = "";
     3. Removes namespace prefixes (e.g., "User:").
     4. Capitalizes the first letter of the username.
     5. Removes duplicate usernames
+
+    Project Rules Note:
+
+    Rules are applied in the order they are specified.
+    "*" - Parses every project
+    "meta.wikimedia.org" - Adds meta.wikimedia.org as a project to be parsed
+    "-meta.wikimedia.org" - Excludes meta.wikimedia.org from being parsed
 */
 new OAuth().then(async function(oauth) {
     await oauth.authenticate();
-    getUserData(() => oauth.access(), [ /* usernames go here */ ], function callback({ status, data }) {
+    getUserData(() => oauth.access(), [ /* usernames go here */ ], [ /* project rules go here */ ], function callback({ status, data }) {
         switch (status) {
             case "progress": {
                 /*

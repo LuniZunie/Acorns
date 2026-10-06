@@ -97,16 +97,38 @@ const mwFetch = async (getToken, project, params, retry = true) => {
     return json;
 };
 
-export default function(getToken, users, callback = () => { }) {
+export default function(getToken, users, projectRules, callback = () => { }) {
     if (typeof getToken !== "function")
         throw new Error("(get-user-data) Token getter must be a function");
     if (!Array.isArray(users))
         throw new Error("(get-user-data) Usernames must be an array");
+    if (!Array.isArray(projectRules))
+        throw new Error("(get-user-data) Project rules must be an array");
     if (typeof callback !== "function")
         throw new Error("(get-user-data) Invalid callback");
 
     users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(normalizeUser).filter(Boolean)));
-    if (users.length === 0) {
+
+    const projects = { all: false, include: new Set(), exclude: new Set() };
+    for (const rule of projectRules) {
+        if (rule === "*") {
+            projects.all = true;
+            projects.include.clear();
+            projects.exclude.clear();
+        } else if (rule.startsWith("-")) {
+            if (projects.all)
+                projects.exclude.add(rule.slice(1));
+            else
+                projects.include.delete(rule.slice(1));
+        } else {
+            if (projects.all)
+                projects.exclude.delete(rule);
+            else
+                projects.include.add(rule);
+        }
+    }
+
+    if (users.length === 0 || (!projects.all && projects.include.size === 0)) {
         callback({ status: "progress", data: 1 });
         callback({ status: "done", data: [ ] });
         return { close: () => { } };
@@ -172,7 +194,7 @@ export default function(getToken, users, callback = () => { }) {
         };
     };
 
-    const parseUser = user => new Promise(resolve => {
+    const parseUser = (user, projects) => new Promise(resolve => {
         const progress = {
             total: 0,
             done: 0,
@@ -407,6 +429,8 @@ export default function(getToken, users, callback = () => { }) {
 
                     for (const merge of globalUserInfo.merged ?? [ ]) {
                         const project = new URL(merge.url).hostname;
+                        if (projects.exclude.has(project) || !(projects.all || projects.include.has(project))) continue;
+
                         const projectData = {
                             project,
                             code: merge.wiki,
@@ -441,10 +465,10 @@ export default function(getToken, users, callback = () => { }) {
             const groups = response.query.globaluserinfo?.groups || [ ];
             scheduler.rateLimit = groups.some(group => [ "local-bot", "steward" ].includes(group)) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL;
 
-            return Promise.all(users.map(user => {
-                return parseUser(user).then(result => {
+            return Promise.all(users.map(async user => {
+                return parseUser(user, projects).then(result => {
                     reportProgress(user);
-                    return Promise.resolve(result);
+                    return result;
                 });
             }));
         })
