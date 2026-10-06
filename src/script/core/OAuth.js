@@ -1,7 +1,7 @@
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
-    static #CLIENT = "c2513c585c4e5227f04b90cdf6cdd479";
+    static #CLIENT = "f97d2c07b05c8febd00212ae6f5ae2d8";
     static #REDIRECT_URI = `${location.origin}/callback`;
     static #WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
 
@@ -16,7 +16,6 @@ export class OAuth {
 
             return this.access();
         } catch (error) {
-            console.error(error);
             this.#token = undefined;
         }
 
