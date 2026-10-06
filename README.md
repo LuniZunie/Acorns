@@ -68,41 +68,44 @@ const TOKEN = "";
     4. Capitalizes the first letter of the username.
     5. Removes duplicate usernames
 */
-getUserData(TOKEN, [ /* usernames go here */ ], function callback({ status, data }) {
-    switch (status) {
-        case "progress": {
-            /*
-                data is
-                    A decimal from 0 to 1 (inclusive) representing the progress of the request.
-            */
-        } break;
-        case "done": {
-            /*
-                data is
-                    An array of the parsed users in the same order as the requested usernames.
-                    If a user does not exist, the corresponding entry is removed.
-            */
-        } break;
-        case "script-error": {
-            /*
-                data is
-                    A string containing the error message from the server.
-            */
-        } break;
-        case "websocket-close": {
-            /*
-                data is
-                    undefined
-            */
-        } break;
-        case "websocket-error": {
-            /*
-                data is
-                    A string containing the error message from the WebSocket.
-            */
-        } break;
-    }
-});
+new OAuth().then(async function(oauth) {
+    await oauth.authenticate();
+    getUserData(() => oauth.access(), [ /* usernames go here */ ], function callback({ status, data }) {
+        switch (status) {
+            case "progress": {
+                /*
+                    data is
+                        A decimal from 0 to 1 (inclusive) representing the progress of the request.
+                */
+            } break;
+            case "done": {
+                /*
+                    data is
+                        An array of the parsed users in the same order as the requested usernames.
+                        If a user does not exist, the corresponding entry is removed.
+                */
+            } break;
+            case "script-error": {
+                /*
+                    data is
+                        A string containing the error message from the server.
+                */
+            } break;
+            case "websocket-close": {
+                /*
+                    data is
+                        undefined
+                */
+            } break;
+            case "websocket-error": {
+                /*
+                    data is
+                        A string containing the error message from the WebSocket.
+                */
+            } break;
+        }
+    });
+}).catch(error => /* Handle the error here */);
 ```
 
 ### Using the retrieved user data

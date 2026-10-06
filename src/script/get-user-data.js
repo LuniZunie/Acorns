@@ -2,7 +2,7 @@ import { addArrayToArray } from "./helpers/add-array-to-array.js";
 import { batchArray } from "./helpers/batch-array.js";
 import { Time } from "./helpers/time.js";
 
-const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .95); // ms between requests
+const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .95);
 const RATE_LIMIT_EXEMPT = 1;
 const EDIT_BATCH = 50;
 const MAX_USER_CONTRIBUTIONS_PER_REQUEST = 500;
@@ -37,7 +37,6 @@ const waitUntil = async time => { // makes sure we never undershoot the wait eve
 
 const revisionContent = rev => rev.slots?.main?.content ?? rev.content;
 
-// Rate limits apply per client IP, so every request from this page shares one scheduler.
 const scheduler = {
     rateLimit: RATE_LIMIT_NORMAL,
     last: -Infinity,
@@ -98,11 +97,6 @@ const mwFetch = async (getToken, project, params, retry = true) => {
     return json;
 };
 
-/**
- * @param getToken async () => ({ access, refresh, expires }); called per request so refreshed tokens are used
- * @param users usernames to fetch
- * @param callback receives { status: "progress" | "done" | "error", data }
- */
 export default function(getToken, users, callback = () => { }) {
     if (typeof getToken !== "function")
         throw new Error("(get-user-data) Token getter must be a function");
@@ -130,21 +124,29 @@ export default function(getToken, users, callback = () => { }) {
     const progressMap = new Map();
     let lastProgress = 0;
     const reportProgress = (user, done, total) => {
+        if (done === undefined && total === undefined) {
+            if (!progressMap.has(user)) return;
+            const temp = progressMap.get(user);
+            done = temp.done, total = temp.total;
+        }
         progressMap.set(user, { done, total });
 
         let doneSum = 0, totalSum = 0;
-        for (const p of progressMap.values()) { doneSum += p.done; totalSum += p.total; }
+        for (const p of progressMap.values()) {
+            doneSum += p.done;
+            totalSum += p.total;
+        }
+
         if (totalSum === 0) return;
 
         const progress = doneSum / totalSum;
-        if (progress < lastProgress) return;
+        if (progress <= lastProgress) return;
         lastProgress = progress;
         if (!finished) callback({ status: "progress", data: progress });
     };
 
     const mwGet = (project, params) => mwFetch(getToken, project, params);
 
-    // Wraps requests so each user knows when all of its (follow-up) requests have settled.
     const createTracker = onIdle => {
         let pending = 0;
         return items => {
@@ -193,7 +195,6 @@ export default function(getToken, users, callback = () => { }) {
 
             edit.categories = A.c;
 
-            // A is the edit's revision, B its parent
             const imagesA = new Set(A.i);
             const imagesB = new Set(B.i);
             edit.images["+"] = A.i.filter(image => !imagesB.has(image));
@@ -440,12 +441,17 @@ export default function(getToken, users, callback = () => { }) {
             const groups = response.query.globaluserinfo?.groups || [ ];
             scheduler.rateLimit = groups.some(group => [ "local-bot", "steward" ].includes(group)) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL;
 
-            return Promise.all(users.map(parseUser));
+            return Promise.all(users.map(user => {
+                return parseUser(user).then(result => {
+                    reportProgress(user);
+                    return Promise.resolve(result);
+                });
+            }));
         })
         .then(results => {
             if (!results || finished) return;
             finished = true;
-            callback({ status: "progress", data: 1 });
+
             callback({ status: "done", data: results.filter(Boolean) });
         })
         .catch(fail);

@@ -9,14 +9,10 @@ export class Time {
             throw new TypeError("(Time.get) Argument[0] must be an object");
 
         let total = 0;
-        if ("seconds" in obj)
-            total += n * 1e3;
-        if ("minutes" in obj)
-            total += n * 6e4;
-        if ("hours" in obj)
-            total += n * 3.6e6;
-        if ("days" in obj)
-            total += n * 8.64e7;
+        if ("seconds" in obj) total += n * 1e3;
+        if ("minutes" in obj) total += n * 6e4;
+        if ("hours" in obj) total += n * 3.6e6;
+        if ("days" in obj) total += n * 8.64e7;
 
         return total;
     }

@@ -14,7 +14,8 @@ class PillInput extends HTMLElement {
         this.render();
 
         const initial = this.getAttribute("pill-input-default");
-        if (initial) this.#consume(initial, true);
+        if (initial)
+            this.#consume(initial, true);
     }
 
     get delimiters() {
@@ -35,7 +36,8 @@ class PillInput extends HTMLElement {
         this.#input = root.querySelector(".text");
 
         root.querySelector(".container").addEventListener("click", e => {
-            if (e.target === e.currentTarget) this.#input.focus();
+            if (e.target === e.currentTarget)
+                this.#input.focus();
         });
 
         this.#input.addEventListener("input", () => this.#consume(this.#input.value));
@@ -60,16 +62,14 @@ class PillInput extends HTMLElement {
         });
     }
 
-    // Splits text on delimiters; all complete segments become pills.
-    // When final is true the trailing segment becomes a pill too.
     #consume(text, final = false) {
-        const chars = [...this.delimiters];
-        const parts = chars.length
-            ? text.split(new RegExp(`[${chars.map(c => c.replace(/[\\\]\[^-]/g, "\\$&")).join("")}]`))
-            : [ text ];
+        const chars = [ ...this.delimiters ];
+        const parts = chars.length ? text.split(new RegExp(`[${chars.map(c => c.replace(/[\\\]\[^-]/g, "\\$&")).join("")}]`)) : [ text ];
         const rest = final ? "" : parts.pop();
-        for (const part of parts) this.#addPill(part);
-        if (!final) this.#input.value = rest;
+        for (const part of parts)
+            this.#addPill(part);
+        if (!final)
+            this.#input.value = rest;
     }
 
     #commit() {

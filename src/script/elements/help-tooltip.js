@@ -18,7 +18,8 @@ const helpWidgets = Array.from(document.querySelectorAll(".help")).map(help => {
 
 document.addEventListener("click", event => {
     for (const widget of helpWidgets)
-        if (!widget.help.contains(event.target)) widget.setOpen(false);
+        if (!widget.help.contains(event.target))
+            widget.setOpen(false);
 });
 
 document.addEventListener("keydown", event => {
