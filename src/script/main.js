@@ -45,6 +45,7 @@ const layoutProgress = () => {
 };
 new ResizeObserver(layoutProgress).observe($progress.parentElement);
 const $status = $("#input-screen-status");
+const $credits = $("#credits");
 
 let progressTarget = 0, progressShown = 0, progressFrame = null, progressLast = 0;
 let progressCalback = null;
@@ -94,6 +95,7 @@ new OAuth().then(async function(oauth) {
         $progress.classList.remove("hidden");
 
         $status.classList.remove("hidden");
+        $credits.classList.add("hidden");
 
         const { close } = getUserData(() => oauth.access(), $users.values(), $servers.values(), function callback({ status, data }) {
             switch (status) {
@@ -133,6 +135,7 @@ new OAuth().then(async function(oauth) {
 
             $progress.classList.add("hidden");
             $status.classList.add("hidden");
+            $credits.classList.remove("hidden");
 
             $users.enable();
             $servers.enable();

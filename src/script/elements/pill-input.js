@@ -61,7 +61,7 @@ class PillInput extends HTMLElement {
 
     render() {
         this.shadowRoot.innerHTML = `
-            <link rel="stylesheet" href="/style/elements/pill-input.css">
+            <link rel="stylesheet" href="/css/elements/pill-input.css">
             <div class="container" part="container">
                 <span class="pills"></span>
                 <input type="text" class="text" autocomplete="off" spellcheck="false">

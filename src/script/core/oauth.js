@@ -1,3 +1,4 @@
+import { $ } from "../helpers/query-selector.js";
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
@@ -71,7 +72,12 @@ export class OAuth {
                                 code_challenge: data.challenge,
                                 code_challenge_method: "S256"
                             });
-                            tab = window.open(`https://meta.wikimedia.org/w/rest.php/oauth2/authorize?${params.toString()}`);
+                            const link = `https://meta.wikimedia.org/w/rest.php/oauth2/authorize?${params.toString()}`;
+
+                            tab = window.open(link);
+                            $("#auth-popup-link").href = link;
+                            $("#auth-popup-blocker").classList.remove("hidden");
+                            $("#auth-popup").classList.remove("hidden");
                         } break;
                         case "success": {
                             fetch("https://meta.wikimedia.org/w/rest.php/oauth2/access_token", {
@@ -111,6 +117,9 @@ export class OAuth {
                 });
                 ws.addEventListener("close", () => {
                     if (tab) tab.close();
+                    $("#auth-popup-blocker").classList.add("hidden");
+                    $("#auth-popup").classList.add("hidden");
+
                     if (!done) {
                         reject({ rejected: "closed" });
                         done = true;

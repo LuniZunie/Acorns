@@ -8,9 +8,10 @@
         <!-- Font Awesome Version 7.3.1 (Latest) -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" integrity="sha512-Rl9V6K6zGubt3V0LpC6P0fEaN7kH8w19MszNre8A6JcO40eYc1B0bCgX05mK6zGvLt..." crossorigin="anonymous" referrerpolicy="no-referrer" />
 
-        <link rel="stylesheet" href="/style/main.css" />
-        <link rel="stylesheet" href="/style/input-screen.css" />
-        <link rel="stylesheet" href="/style/elements/pill-input.css" />
+        <link rel="stylesheet" href="/css/main.css" />
+        <link rel="stylesheet" href="/css/input-screen.css" />
+        <link rel="stylesheet" href="/css/elements/auth-popup.css" />
+        <link rel="stylesheet" href="/css/elements/pill-input.css" />
 
         <script src="/script/elements/pill-input.js"></script>
         <script type="module" src="/script/elements/help-tooltip.js"></script>
@@ -18,36 +19,44 @@
         <script type="module" src="/script/main.js"></script>
     </head>
     <body>
-        <div id="input-screen-wrap">
-        <div id="input-screen">
-            <p>Users to parse:</p>
-            <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
+        <div id="auth-popup-blocker" class="hidden"></div>
+        <div id="auth-popup" class="hidden">
+            <p>A new tab has been opened for authentication.</p>
+            <p>If you the tab did not open, open this <a id="auth-popup-link" target="_blank">link</a> manually.</p>
+        </div>
 
-            <div class="field-heading">
-                <span>Servers to parse:</span>
-                <div class="help">
-                    <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="server-help"><i class="fas fa-circle-question"></i></button>
-                    <div id="server-help" class="tooltip" role="tooltip" hidden>
-                        <ul>
-                            <li><code>*</code> - Include every project</li>
-                            <li><code>meta.wikimedia.org</code> - Include a project</li>
-                            <li><code>-meta.wikimedia.org</code> - Exclude a project</li>
-                            <li>Rules are applied in order</li>
-                        </ul>
+        <div id="input-screen-wrap">
+            <div id="input-screen">
+                <p>Users to parse:</p>
+                <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
+
+                <div class="field-heading">
+                    <span>Servers to parse:</span>
+                    <div class="help">
+                        <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="server-help"><i class="fas fa-circle-question"></i></button>
+                        <div id="server-help" class="tooltip" role="tooltip" hidden>
+                            <ul>
+                                <li><code>*</code> - Include every project</li>
+                                <li><code>meta.wikimedia.org</code> - Include a project</li>
+                                <li><code>-meta.wikimedia.org</code> - Exclude a project</li>
+                                <li>Rules are applied in order</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
+                <pill-input id="server-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
+
+                <button id="input-screen-submit" class="disabled">Submit</button>
+                <button id="input-screen-cancel" class="hidden">Cancel</button>
+
+                <svg id="input-screen-progress" class="hidden" aria-hidden="true">
+                    <path pathLength="1"></path>
+                    <path pathLength="1"></path>
+                </svg>
             </div>
-            <pill-input id="server-pill-input" pill-input-default="*" pill-input-delimiters=",|"></pill-input>
 
-            <button id="input-screen-submit" class="disabled">Submit</button>
-            <button id="input-screen-cancel" class="hidden">Cancel</button>
-
-            <svg id="input-screen-progress" class="hidden" aria-hidden="true">
-                <path pathLength="1"></path>
-                <path pathLength="1"></path>
-            </svg>
-        </div>
-        <span id="input-screen-status" class="hidden"></span>
+            <span id="input-screen-status" class="hidden"></span>
+            <span id="credits">Designed by <a href="https://en.wikipedia.org/wiki/User:LuniZunie" target="_blank">LuniZunie</a> and <a href="https://en.wikipedia.org/wiki/User:Vermont" target="_blank">Vermont</a>. Logo by <a href="https://en.wikipedia.org/wiki/User:Giraffer" target="_blank">Giraffer</a>.</span>
         </div>
     </body>
 </html>

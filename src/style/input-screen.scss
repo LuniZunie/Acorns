@@ -20,6 +20,30 @@
     }
 }
 
+#credits {
+    position: absolute;
+    top: calc(100% + 14px);
+    left: 0;
+    right: 0;
+    font: 0.9rem system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: $muted;
+    text-align: center;
+
+    &.hidden {
+        visibility: hidden;
+    }
+
+    & a {
+        color: $muted;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+}
+
 #input-screen {
     position: relative;
     box-sizing: border-box;

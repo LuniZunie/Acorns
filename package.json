@@ -4,7 +4,7 @@
     "ws": "^8.22.0"
   },
   "scripts": {
-    "compile": "sass --no-source-map src/style/main.scss:src/style/main.css src/style/input-screen.scss:src/style/input-screen.css src/style/elements/pill-input.scss:src/style/elements/pill-input.css",
+    "compile": "sass --no-source-map src/style:src/css",
     "start": "npm run compile && node --env-file=.env index.js"
   },
   "type": "module"
