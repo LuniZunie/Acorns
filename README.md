@@ -92,22 +92,10 @@ new OAuth().then(async function(oauth) {
                         If a user does not exist, the corresponding entry is removed.
                 */
             } break;
-            case "script-error": {
+            case "error": {
                 /*
                     data is
                         A string containing the error message from the server.
-                */
-            } break;
-            case "websocket-close": {
-                /*
-                    data is
-                        undefined
-                */
-            } break;
-            case "websocket-error": {
-                /*
-                    data is
-                        A string containing the error message from the WebSocket.
                 */
             } break;
         }
