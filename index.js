@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,684 +6,33 @@ import { readFile } from "node:fs/promises";
 
 import { WebSocketServer } from "ws";
 
-import fetchCookie from "fetch-cookie";
-import { CookieJar } from "tough-cookie";
-
-import addArrayToArray from "./custom_modules/add-array-to-array.js";
-import batchArray from "./custom_modules/batch-array.js";
-
 import { Time } from "./custom_modules/time.js";
 import { TempMap } from "./custom_modules/temp-map.js";
 
-const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .95);
-if (RATE_LIMIT_NORMAL < 0 || !Number.isFinite(RATE_LIMIT_NORMAL))
-    throw new Error("Rate limit (normal) must be a non-negative finite number");
+const CALLBACK_RATE_LIMIT_WINDOW = Time.minutes(1);
+if (CALLBACK_RATE_LIMIT_WINDOW <= 0 || !Number.isFinite(CALLBACK_RATE_LIMIT_WINDOW))
+    throw new Error("Callback rate limit window must be a positive finite number");
 
-const RATE_LIMIT_EXEMPT = 1;
-if (RATE_LIMIT_EXEMPT < 0 || !Number.isFinite(RATE_LIMIT_EXEMPT))
-    throw new Error("Rate limit (exempt) must be a non-negative finite number");
-
-const EDIT_BATCH = 50;
-if (EDIT_BATCH <= 0 || !Number.isFinite(EDIT_BATCH))
-    throw new Error("Edit batch must be a positive finite number");
-
-const MAX_USER_CONTRIBUTIONS_PER_REQUEST = 500;
-if (MAX_USER_CONTRIBUTIONS_PER_REQUEST <= 0 || !Number.isFinite(MAX_USER_CONTRIBUTIONS_PER_REQUEST))
-    throw new Error("Max user contributions per request must be a positive finite number");
-
-// from https://commons.wikimedia.org/wiki/Special:Upload
-const FILE_EXTENSIONS = /\.(tiff|tif|png|gif|jpg|jpeg|webp|xcf|pdf|mid|ogg|ogv|svg|djvu|oga|flac|opus|wav|webm|mp3|midi|mpg|mpeg)$/i;
-if (!(FILE_EXTENSIONS instanceof RegExp))
-    throw new Error("File extensions must be a regular expression");
+const CALLBACK_RATE_LIMIT_MAX = 3; // max /callback requests per client IP, per window
+if (CALLBACK_RATE_LIMIT_MAX <= 0 || !Number.isFinite(CALLBACK_RATE_LIMIT_MAX))
+    throw new Error("Callback rate limit max must be a positive finite number");
 
 // caches
-const projectCache = new TempMap(Time.minutes(30)); // cache projects with a 30-minute timeout
+const callbackRateLimitCache = new TempMap(CALLBACK_RATE_LIMIT_WINDOW);
+const OAuthCallbackCache = new TempMap(Time.minutes(5)); // cache state callbacks with a 5-minute timeout
 
 // main
-const parser = (function (wikitext) {
-    if (typeof wikitext !== "string")
-        return { c: [ ], i: [ ], l: [ ], d: true };
-    return {
-        c: (wikitext.match(this.rCAT) || [ ]).map(match => match.trim().replaceAll("_", " ")),
-        i: (wikitext.match(this.rIMG) || [ ]).map(match => match.slice(1).trim().replaceAll("_", " ")),
-        l: (wikitext.match(this.rLINK) || [ ]).map(match => match.trim().replaceAll("_", " ")),
-        d: true
-    }
-}).bind({
-    rCAT: new RegExp("(?<=\\[\\[Category:)([^\\]|]+)", "gi"),
-    rIMG: new RegExp(`((?<=\\[\\[:?(File|Image|Media):)([^\\]\\|]+)|(=[^\n\\[\\]\\{\\}\\\\/<>#|]+?\\.(?:tiff?|png|gif|jpe?g|webp|xcf|pdf|midi?|og[gva]|svg|djvu|flac|opus|wav|webm|mp3|mpe?g)))`, "gi"),
-    rLINK: new RegExp("(?:https?:|(?<=[\\[\\s=|]))//[^\\s\\[\\]<>\"|{}]+", "gi")
-});
+const base64url = str => str.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 
-
-const waitUntil = (async function(time) { // makes sure we never undershoot the wait even slightly
-    let wait = 0;
-    do {
-        if (wait > 0) await new Promise(resolve => { setTimeout(resolve, wait); });
-        wait = time - performance.now();
-    } while (wait > 0);
-});
-
-// returns a Promise resolving to the fetch response
-const mwFetch = (function(token, project, params = { }) {
-    if (typeof token !== "string")
-        throw new Error("(mwFetch) Argument[0] must be a string");
-    if (typeof project !== "string")
-        throw new Error("(mwFetch) Argument[1] must be a string");
-    if (typeof params !== "object" || params === null)
-        throw new Error("(mwFetch) Argument[2] must be a non-null object");
-
-    return this.sessionFetch(`https://${project}/w/api.php`, {
-        method: "POST",
-        headers: {
-            "User-Agent": "Acorns/1.0 (https://github.com/LuniZunie/Acorns)",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: new URLSearchParams({
-            ...params,
-            format: "json",
-            formatversion: "2"
-        })
-    });
-}).bind({ sessionFetch: fetchCookie(fetch, new CookieJar()) });
-
-const enqueueMwFetch = (function(dataList) {
-    const priorityGroups = { };
-    for (const item of this.queue)
-        (priorityGroups[item[4]] ??= [ ]).push(item);
-    for (const item of dataList)
-        (priorityGroups[item[4]] ??= [ ]).push(item);
-
-    const temp = [ ];
-    for (const priority of Object.keys(priorityGroups).sort((a, b) => b - a))
-        addArrayToArray(temp, priorityGroups[priority]);
-    this.queue = temp;
-
-    if (dataList.length > 0 && !this.active) {
-        const id = ++this.id;
-        this.active = true;
-
-        this.idle = false;
-
-        waitUntil(this.last + this.rateLimit)
-            .then(() => {
-                const call = async ([ project, params, response = () => { }, reject = () => { } ]) => {
-                    this.last = performance.now();
-
-                    let resolveThis;
-                    const thisPromise = new Promise(resolve => { resolveThis = resolve; });
-                    this.ongoing.add(thisPromise);
-
-                    mwFetch(this.token, project, params)
-                        .then(response => response.json())
-                        .then(response)
-                        .catch(reject)
-                        .finally(() => {
-                            resolveThis();
-                            this.ongoing.delete(thisPromise);
-                        });
-
-                    // wait for the rate limit interval to pass before processing the next request
-                    await waitUntil(this.last + this.rateLimit);
-                    if (this.queue.length > 0) {
-                        let resolveNext;
-                        const nextPromise = new Promise(resolve => { resolveNext = resolve; });
-                        setTimeout(() => call(this.queue.shift()).finally(resolveNext), 0); // bypass call stack limit
-                        return await nextPromise;
-                    }
-                };
-
-                call(this.queue.shift())
-                    .finally(() => {
-                        this.idle = performance.now();
-                        this.active = false;
-
-                        Promise.all(Array.from(this.ongoing))
-                            .finally(() => {
-                                setTimeout(() => {
-                                    if (this.queue.length === 0 && this.id === id)
-                                        this.callbacks = this.callbacks.filter(fn => fn());
-                                }, 0);
-                            })
-                    });
-            })
-            .catch(error => console.error(error));
+const isCallbackRateLimited = (function(ip) {
+    let entry = callbackRateLimitCache.get(ip);
+    if (!entry) {
+        entry = { count: 0 };
+        callbackRateLimitCache.set(ip, entry); // starts the fixed window for this IP
     }
 
-    return { callback: fn => this.callbacks.push(fn) };
+    return ++entry.count > CALLBACK_RATE_LIMIT_MAX;
 });
-
-const getEnqueuer = (function (token, rateLimit) {
-    for (const [ key, value ] of this.enqueuers) {
-        if (key === token)
-            return {
-                enqueuer: value.enqueuer,
-                changeRateLimit: newRateLimit => {
-                    if (value?.context?.rateLimit === undefined) return;
-                    value.context.rateLimit = newRateLimit;
-                }
-            };
-        else {
-            const idle = value.context.idle;
-            if (idle === false) continue;
-            else if (performance.now() - idle > Time.minutes(30))
-                this.enqueuers.delete(key);
-        }
-    }
-
-    const context = { token, ongoing: new Set(), queue: [ ], last: -rateLimit, rateLimit, callbacks: [ ], id: 0n, active: false, idle: false };
-    const enqueuer = enqueueMwFetch.bind(context);
-    this.enqueuers.set(token, { context, enqueuer });
-    return {
-        enqueuer,
-        changeRateLimit: newRateLimit => { context.rateLimit = newRateLimit; }
-    };
-}).bind({ enqueuers: new Map() });
-
-function parseUser(token, user, cancel, progressCallback = () => { }) {
-    const progress = {
-        total: 0,
-        done: 0,
-        update: function(n) {
-            if (n === 0)
-                return progressCallback(this.done, this.total);
-
-            const temp = this.done;
-            this.done = Math.min(this.done + n, this.total);
-            if (this.done > temp)
-                progressCallback(this.done, this.total);
-        }
-    };
-
-    const data = {
-        missing: true,
-
-        user,
-
-        __lookup__: {
-            array: {
-                map: { },
-
-                UUID: -1,
-                memory: { }
-            },
-            string: {
-                map: { },
-
-                UUID: -1,
-                memory: { }
-            }
-        }
-    };
-
-    const __en__ = value => { // only use on strings or arrays with strings
-        if (typeof value === "string") {
-            if (value === "") return;
-            value = encodeURIComponent(value);
-
-            const lookup = data.__lookup__.string;
-            if (value in lookup.memory) return lookup.memory[value];
-            lookup.map[++lookup.UUID] = value;
-            return lookup.memory[value] = lookup.UUID;
-        } else if (Array.isArray(value)) {
-            const len = value.length;
-            if (len === 0) return;
-
-            let result = "";
-            for (let i = 0; i < len; i++) {
-                const temp = __en__(value[i]);
-                result += result ? `|${temp}` : temp;
-            }
-
-            const lookup = data.__lookup__.array;
-            if (result in lookup.memory) return lookup.memory[result];
-            lookup.map[++lookup.UUID] = result;
-            return lookup.memory[result] = lookup.UUID;
-        } else
-            throw new Error(`Unsupported value type for compression: ${typeof value}`);
-    };
-
-    const projectsMap = new Map();
-
-    let resolver, rejector;
-    const promise = new Promise((resolve, reject) => { [ resolver = resolve, rejector = reject ]; });
-
-    const { enqueuer, changeRateLimit } = getEnqueuer(token, RATE_LIMIT_NORMAL);
-    enqueuer([
-        [
-            "login.wikimedia.org",
-            {
-                "action": "query",
-                "meta": "globaluserinfo",
-
-                // meta>globaluserinfo
-                "guiuser": user,
-                "guiprop": "groups",
-            },
-            response => {
-                if (cancel.cancelled) return;
-                if ((response?.httpCode ?? 200) !== 200)
-                    throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                const rateLimitExempt = groups => groups.some(group => [ "local-bot", "steward" ].includes(group));
-                changeRateLimit(rateLimitExempt(response.query.globaluserinfo?.groups || [ ]) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL);
-
-                const uploadsBody = {
-                    "action": "query",
-                    "list": "logevents",
-
-                    /* list>logevents */
-                    "leuser": user,
-                    "letype": "upload",
-                    "leaction": "upload/upload",
-                    "leprop": "ids|title|timestamp|comment|tags",
-                    "lelimit": "max"
-                };
-                const uploadsResponseHandler = response => {
-                    if (cancel.cancelled) return;
-                    if ((response?.httpCode ?? 200) !== 200)
-                        throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                    addArrayToArray(data.uploads ??= [ ], (response.query.logevents || [ ]).map(le =>
-                        ({ logid: le.logid, title: __en__(le.title), timestamp: le.timestamp, comment: __en__(le.comment), tags: __en__(le.tags) })
-                    ));
-                    if (response.continue)
-                        enqueuer([
-                            [
-                                "commons.wikimedia.org",
-                                { ...uploadsBody, ...response.continue },
-                                uploadsResponseHandler,
-                                uploadsErrorHandler,
-                                0
-                            ]
-                        ]);
-                };
-                const uploadsErrorHandler = error => { rejector(error); };
-
-                const contribsBody = {
-                    "action": "query",
-
-                    "list": "usercontribs|blocks",
-
-                    /* list>usercontribs */
-                    "ucuser": user,
-                    "ucprop": "ids|title|timestamp|comment|sizediff|tags",
-                    "uclimit": "max",
-
-                    /* list>blocks */
-                    "bkusers": user,
-                    "bkprop": "id|user|by|reason|expiry|flags"
-                };
-                const editsEnqueuer = (project, params) => {
-                    enqueuer([
-                        [
-                            project,
-                            params,
-                            response => {
-                                if (cancel.cancelled) return;
-                                if ((response?.httpCode ?? 200) !== 200)
-                                    throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                                if (response.query.blocks)
-                                    addArrayToArray(projectsMap.get(project).blocks ??= [ ], (response.query.blocks || [ ]).map(block =>
-                                        ({ ...block, reason: __en__(block.reason), user: undefined })
-                                    ));
-
-                                handleNewEdits(project, response.query.usercontribs || [ ]);
-                                if (response.continue)
-                                    editsEnqueuer(project, { ...contribsBody, ...response.continue });
-
-                                progress.update(1);
-                            },
-                            error => { rejector(error); },
-                            1
-                        ]
-                    ]);
-                };
-
-                const buildEdit = edit => {
-                    delete edit.B.c;
-
-                    edit.categories = __en__(edit.A.c);
-                    delete edit.A.c;
-
-                    {
-                        const imagesBSet = new Set(edit.B.i);
-
-                        {
-                            const imagesASet = new Set(edit.A.i);
-                            for (const image of edit.B.i)
-                                if (!imagesASet.has(image))
-                                    edit.images["+"].push(image);
-                            delete edit.B.i;
-
-                            edit.images["+"] = __en__(edit.images["+"]);
-                        }
-
-                        for (const image of edit.A.i)
-                            if (!imagesBSet.has(image))
-                                edit.images["-"].push(image);
-                        delete edit.A.i;
-
-                        edit.images["-"] = __en__(edit.images["-"]);
-                        if (edit.images["+"] === undefined && edit.images["-"] === undefined)
-                            delete edit.images;
-                    }
-
-                    {
-                        // for links, if they change the capitalization, they didn't really add a new link
-                        // we really only care about the domain part of the links, which are case-insensitive anyways
-                        const linksBSet = new Set(edit.B.l.map(link => link.toLowerCase()));
-
-                        {
-                            const linksASet = new Set(edit.A.l.map(link => link.toLowerCase()));
-                            for (const link of edit.B.l)
-                                if (!linksASet.has(link.toLowerCase()))
-                                    edit.links["+"].push(link);
-                            delete edit.B.l;
-
-                            edit.links["+"] = __en__(edit.links["+"]);
-                        }
-
-                        for (const link of edit.A.l)
-                            if (!linksBSet.has(link.toLowerCase()))
-                                edit.links["-"].push(link);
-                        delete edit.A.l;
-
-                        edit.links["-"] = __en__(edit.links["-"]);
-                        if (edit.links["+"] === undefined && edit.links["-"] === undefined)
-                            delete edit.links;
-                    }
-
-                    delete edit.A;
-                    delete edit.B;
-                };
-
-                const handleNewEdits = (project, edits) => {
-                    if (edits.length === 0) return;
-
-                    const projectData = projectsMap.get(project);
-                    projectData.edits ??= [ ];
-
-                    const editMap = new Map();
-
-                    let skippedParents = 0;
-                    const parentIds = new Set();
-                    const parentToBase = new Map();
-                    for (const batch of batchArray(edits, EDIT_BATCH)) {
-                        let baseRevids = "";
-                        for (const batchEdit of batch) {
-                            const edit = {
-                                title: __en__(batchEdit.title),
-                                revid: batchEdit.revid,
-                                parentid: batchEdit.parentid,
-
-                                timestamp: batchEdit.timestamp,
-                                comment: __en__(batchEdit.comment || ""),
-                                tags: __en__(batchEdit.tags || [ ]),
-                                sizediff: batchEdit.sizediff,
-
-                                categories: [ ],
-                                images: { "+": [ ], "-": [ ] },
-                                links: { "+": [ ], "-": [ ] },
-
-                                A: { c: [ ], i: [ ], l: [ ], d: false },
-                                B: { c: [ ], i: [ ], l: [ ], d: false }
-                            };
-
-                            projectData.edits.push(edit);
-                            editMap.set(batchEdit.revid, edit);
-
-                            baseRevids += baseRevids ? `|${batchEdit.revid}` : batchEdit.revid;
-                            if (batchEdit.parentid) {
-                                parentIds.add(batchEdit.parentid);
-                                if (parentToBase.has(batchEdit.parentid)) parentToBase.get(batchEdit.parentid).add(batchEdit.revid);
-                                else parentToBase.set(batchEdit.parentid, new Set([ batchEdit.revid ]));
-                            } else {
-                                edit.B.d = true;
-                                skippedParents = (skippedParents + 1) % EDIT_BATCH;
-                                if (skippedParents === 0) progress.update(1); // we've esentially skipped a whole batch
-                            }
-                        }
-
-                        enqueuer([
-                            [
-                                project,
-                                {
-                                    "action": "query",
-                                    "prop": "revisions",
-                                    "revids": baseRevids,
-
-                                    /* prop>revisions */
-                                    "rvprop": "ids|content",
-                                },
-                                response => {
-                                    if (cancel.cancelled) return;
-                                    if ((response?.httpCode ?? 200) !== 200)
-                                        throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                                    for (const badRev of Object.values(response.query.badrevids || [ ])) {
-                                        const edit = editMap.get(badRev);
-                                        edit.A.d = true;
-                                        if (edit.B.d) buildEdit(edit);
-                                    }
-
-                                    for (const page of response.query.pages || [ ])
-                                        for (const rev of page.revisions || [ ]) {
-                                            const edit = editMap.get(rev.revid);
-                                            edit.A = parser(rev.content);
-                                            if (edit.B.d) buildEdit(edit);
-                                        }
-
-                                    progress.update(1);
-                                },
-                                error => { rejector(error); },
-                                0
-                            ]
-                        ]);
-
-                        if (parentIds.size >= EDIT_BATCH) {
-                            let parentRevids = "";
-                            const iterator = parentIds.values();
-                            for (let i = 0; i < EDIT_BATCH; i++) {
-                                const { value, done } = iterator.next();
-                                if (done) break;
-                                parentRevids += parentRevids ? `|${value}` : value;
-                                parentIds.delete(value);
-                            }
-
-                            enqueuer([
-                                [
-                                    project,
-                                    {
-                                        "action": "query",
-                                        "prop": "revisions",
-                                        "revids": parentRevids,
-
-                                        /* prop>revisions */
-                                        "rvprop": "ids|content",
-                                    },
-                                    response => {
-                                        if (cancel.cancelled) return;
-                                        if ((response?.httpCode ?? 200) !== 200)
-                                            throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                                        for (const badRev of Object.values(response.query.badrevids || [ ])) {
-                                            for (const base of parentToBase.get(badRev.revid)) {
-                                                const edit = editMap.get(base);
-                                                edit.B.d = true;
-                                                if (edit.A.d) buildEdit(edit);
-                                            }
-                                        }
-
-                                        for (const page of response.query.pages || [ ])
-                                            for (const rev of page.revisions || [ ]) {
-                                                for (const base of parentToBase.get(rev.revid)) {
-                                                    const edit = editMap.get(base);
-                                                    edit.B = parser(rev.content);
-                                                    if (edit.A.d) buildEdit(edit);
-                                                }
-                                            }
-
-                                        progress.update(1);
-                                    },
-                                    error => { rejector(error); },
-                                    0
-                                ]
-                            ]);
-                        }
-                    }
-
-                    if (parentIds.size > 0)
-                        enqueuer([
-                            [
-                                project,
-                                {
-                                    "action": "query",
-                                    "prop": "revisions",
-                                    "revids": Array.from(parentIds).join("|"),
-
-                                    /* prop>revisions */
-                                    "rvprop": "ids|content"
-                                },
-                                response => {
-                                    if (cancel.cancelled) return;
-                                    if ((response?.httpCode ?? 200) !== 200)
-                                        throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                                    for (const badRev of Object.values(response.query.badrevids || [ ])) {
-                                        for (const base of parentToBase.get(badRev.revid)) {
-                                            const edit = editMap.get(base);
-                                            edit.B.d = true;
-                                            if (edit.A.d) buildEdit(edit);
-                                        }
-                                    }
-
-                                    for (const page of response.query.pages || [ ])
-                                        for (const rev of page.revisions || [ ]) {
-                                            for (const base of parentToBase.get(rev.revid)) {
-                                                const edit = editMap.get(base);
-                                                edit.B = parser(rev.content);
-                                                if (edit.A.d) buildEdit(edit);
-                                            }
-                                        }
-
-                                    progress.update(1);
-                                },
-                                error => { rejector(error); },
-                                0
-                            ]
-                        ]);
-                };
-
-                enqueuer([
-                    [
-                        "login.wikimedia.org",
-                        {
-                            "action": "query",
-
-                            "list": "globalusers|globalblocks",
-                            "meta": "globaluserinfo",
-
-                            /* list>globalusers */
-                            "gususers": user,
-                            "gusprop": "editcount|groups|rights|locked",
-
-                            /* list>globalblocks */
-                            "bgtargets": user,
-                            "bglimit": "max",
-
-                            /* meta>globaluserinfo */
-                            "guiprop": "merged",
-                            "guiuser": user
-                        },
-                        response => {
-                            if (cancel.cancelled) return;
-                            if ((response?.httpCode ?? 200) !== 200)
-                                throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                            if (response.query.globaluserinfo.missing === true) return;
-                            delete data.missing;
-
-                            data.projects = [ ];
-
-                            const globalUserInfo = response.query.globaluserinfo;
-                            const globalUser = response.query.globalusers[0];
-
-                            data.registration = {
-                                project: globalUserInfo.home,
-                                timestamp: globalUserInfo.registration
-                            };
-
-                            data.edit_count = globalUser.editcount;
-
-                            data.groups = __en__(globalUser.groups || [ ]);
-                            data.rights = __en__(globalUser.rights || [ ]);
-
-                            data.locked = globalUser.locked;
-                            if (response.query.globalblocks)
-                                data.blocks = response.query.globalblocks.map(block => ({ ...block, reason: __en__(block.reason || ""), target: undefined }));
-
-                            (globalUserInfo.merged ?? [ ]).map(merge => {
-                                const project = projectCache.renew(merge.url, () => new URL(merge.url).hostname);
-
-                                const projectData = {
-                                    project,
-                                    code: merge.wiki,
-
-                                    registration: {
-                                        method: merge.method,
-                                        timestamp: merge.timestamp
-                                    },
-
-                                    edit_count: merge.editcount
-                                };
-                                projectsMap.set(project, projectData);
-                                data.projects.push(projectData);
-
-                                if (merge.editcount > 0) {
-                                    progress.total += Math.ceil(merge.editcount / MAX_USER_CONTRIBUTIONS_PER_REQUEST); // number of requests needed for this user's contributions
-                                    progress.total += Math.ceil(merge.editcount / EDIT_BATCH) * 2; // number of requests for getting content of revisions (and their parents)
-
-                                    editsEnqueuer(project, contribsBody);
-                                }
-                            });
-
-                            progress.update(0); // initial progress update
-                        },
-                        error => { rejector(error); },
-                        2
-                    ],
-                    [ "commons.wikimedia.org", uploadsBody, uploadsResponseHandler, uploadsErrorHandler ]
-                ])
-                    .callback(async () => {
-                        if (cancel.cancelled) return;
-                        if ((response?.httpCode ?? 200) !== 200)
-                            throw new Error(`HTTP ${response.httpCode} error${response.httpReason ? `: ${response.httpReason}` : "."}`);
-
-                        if (progress.done < progress.total) {
-                            progress.done = progress.total;
-                            progress.update(0);
-                        }
-
-                        if (data.missing) return resolver(null);
-
-                        data.__lookup__.string = data.__lookup__.string.map;
-                        data.__lookup__.array = data.__lookup__.array.map;
-
-                        const stream = new Blob([ JSON.stringify(data) ]).stream().pipeThrough(new CompressionStream("gzip"));
-                        const buffer = await new Response(stream).arrayBuffer();
-                        resolver(btoa(new Uint8Array(buffer).reduce((acc, byte) => acc + String.fromCharCode(byte), "")));
-                    });
-            },
-            error => { rejector(error); },
-            4
-        ]
-    ]);
-
-    return promise;
-}
-
 // server stuff
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "src");
 const MIME_TYPES = {
@@ -713,96 +63,100 @@ const server = createServer(async (req, res) => {
         return res.end("Bad Request");
     }
 
-    const relative = pathname === "/" || pathname === "" ? join("view", "index.html") : pathname.slice(1);
-    const filePath = resolve(SRC_DIR, relative);
-    if (filePath !== SRC_DIR && !filePath.startsWith(SRC_DIR + sep)) {
-        res.writeHead(403);
-        return res.end("Forbidden");
-    }
+    switch (pathname) { // for custom handlers
+        case "/callback": {
+            const ip = req.socket.remoteAddress ?? "unknown";
+            if (isCallbackRateLimited(ip)) {
+                res.writeHead(429, { "Retry-After": Math.ceil(CALLBACK_RATE_LIMIT_WINDOW / 1000).toString() });
+                return res.end("Too Many Requests");
+            }
 
-    try {
-        const file = await readFile(filePath);
-        res.writeHead(200, {
-            "Content-Type": MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream",
-            "Content-Length": file.length
-        });
-        res.end(req.method === "HEAD" ? undefined : file);
-    } catch (error) {
-        if (error.code === "ENOENT" || error.code === "EISDIR") {
-            res.writeHead(404);
-            res.end("Not Found");
-        } else {
-            console.error(error);
-            res.writeHead(500);
-            res.end("Internal Server Error");
-        }
+            const url = new URL(req.url, "http://localhost");
+
+            const code = url.searchParams.get("code");
+            const state = url.searchParams.get("state");
+
+            if (code && state && OAuthCallbackCache.has(state)) {
+                const callback = OAuthCallbackCache.get(state);
+                callback({ code });
+
+                res.writeHead(200);
+                return res.end("Callback received");
+            } else {
+                res.writeHead(400);
+                return res.end("Bad Request");
+            }
+        } break;
+        default: {
+            let relative;
+            switch (pathname) { // for static file routing
+                case "/":
+                case "": {
+                    relative = join("view", "index.html");
+                } break;
+                default: {
+                    relative = pathname.slice(1);
+                } break;
+            }
+
+            const filePath = resolve(SRC_DIR, relative);
+            if (filePath !== SRC_DIR && !filePath.startsWith(SRC_DIR + sep)) {
+                res.writeHead(403);
+                return res.end("Forbidden");
+            }
+
+            try {
+                const file = await readFile(filePath);
+                res.writeHead(200, {
+                    "Content-Type": MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream",
+                    "Content-Length": file.length
+                });
+                res.end(req.method === "HEAD" ? undefined : file);
+            } catch (error) {
+                if (error.code === "ENOENT" || error.code === "EISDIR") {
+                    res.writeHead(404);
+                    res.end("Not Found");
+                } else {
+                    console.error(error);
+                    res.writeHead(500);
+                    res.end("Internal Server Error");
+                }
+            }
+        } break;
     }
 });
 
 const wss = new WebSocketServer({ server });
 wss.on("connection", ws => {
-    const cancel = { cancelled: false };
+    const state = crypto.randomUUID();
     ws.on("message", data => {
-        if (cancel.cancelled) return;
-
         const str = data.toString().trim();
-        if (str.startsWith("#")) {
-            switch (str) {
-                case "#ping": {
-                    ws.send("pong");
-                } break;
-            }
-        } else {
-            const [ token, usernames ] = str.split(/:(.*)/s);
-            if (!token) return ws.send(JSON.stringify({ event: "error", error: "Invalid token" }));
+        if (!str.startsWith("#")) return;
 
-            const users = new Set(usernames.split("|").map(user => {
-                const temp = decodeURIComponent(user).trim().replaceAll("_", " ").split(":").pop();
-                return `${temp.charAt(0).toUpperCase()}${temp.slice(1)}`;
-            }).filter(Boolean));
+        const [ cmd ] = str.slice(1).split(/\s(.*)/s);
+        switch (cmd) {
+            case "ping": {
+                ws.send("pong");
+            } break;
+            case "auth": {
+                if (OAuthCallbackCache.has(state)) return;
 
-            if (users.size === 0) {
-                ws.send(JSON.stringify({ event: "progress", progress: 1 }));
-                ws.send(JSON.stringify({ event: "done", data: [ ] }));
-                return;
-            }
+                const verifier = base64url(crypto.randomBytes(32));
+                const challenge = base64url(crypto.createHash("sha256").update(verifier).digest());
 
-            let i = 0;
-            const order = { };
-            for (const user of users)
-                order[user] = i++;
+                OAuthCallbackCache.set(state, ({ code }) => {
+                    OAuthCallbackCache.delete(state);
+                    if (!code) return ws.send(JSON.stringify({ event: "denied" }));
 
-            let parsedCount = 0;
-            const parsed = [ ];
+                    ws.send(JSON.stringify({ event: "success", data: { code, verifier } }));
+                });
+                OAuthCallbackCache.addTimeoutListener(state, () => { ws.send(JSON.stringify({ event: "timeout" })); });
 
-            let lastProgress = 0;
-            const progressMap = { };
-            for (const user of users) {
-                parseUser(token, user, cancel, (done, total) => {
-                    progressMap[user] = { done, total };
-                    const aggregate = Object.values(progressMap).reduce((acc, { done, total }) =>
-                        ({ done: acc.done + done, total: acc.total + total })
-                    , { done: 0, total: 0 });
-
-                    const progress = aggregate.done / aggregate.total;
-                    if (progress < lastProgress) return; // Prevent sending progress updates that are lower than the last reported progress
-                    lastProgress = progress;
-
-                    ws.send(JSON.stringify({ event: "progress", progress }));
-                })
-                    .then(data => {
-                        if (data !== null) parsed[order[user]] = data;
-                        if (++parsedCount >= users.size)
-                            ws.send(JSON.stringify({ event: "done", data: parsed.filter(Boolean) }));
-                    })
-                    .catch(error => {
-                        cancel.cancelled = true;
-                        ws.send(JSON.stringify({ event: "error", error: error.message }));
-                    });
-            }
+                ws.send(JSON.stringify({ event: "ready", data: { state, challenge } }));
+                ws.addEventListener("close", () => { OAuthCallbackCache.delete(state); });
+            } break;
         }
     });
-    ws.on("close", () => { cancel.cancelled = true; });
 });
 
 server.listen(3000, () => {
