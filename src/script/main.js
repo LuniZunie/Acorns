@@ -102,6 +102,7 @@ $submit.addEventListener("click", () => {
                 case "done": {
                     if (data.length === 0) {
                         $progress.classList.add("error");
+                        console.error("No data returned");
                         progressCalback = () => {
                             $status.textContent = "No data returned";
                         };
@@ -124,6 +125,8 @@ $submit.addEventListener("click", () => {
 
         $cancel.addEventListener("click", () => {
             close();
+
+            progressCalback = null;
 
             $submit.classList.remove("hidden");
             $cancel.classList.add("hidden");
