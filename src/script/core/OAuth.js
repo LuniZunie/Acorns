@@ -1,12 +1,46 @@
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
-    static #CLIENT = "f97d2c07b05c8febd00212ae6f5ae2d8";
     static #REDIRECT_URI = `${location.origin}/callback`;
-    static #WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
+    static #WS_URL = `${location.protocol.replace("http", "ws")}//${location.host}`;
+
+    #client;
 
     #token;
     #refreshing;
+
+    constructor() {
+        return new Promise((resolve, reject) => {
+            let done = false;
+
+            const ws = new WebSocket(OAuth.#WS_URL);
+            ws.addEventListener("open", () => {
+                ws.send("#client");
+                ws.addEventListener("message", e => {
+                    const { event, data } = JSON.parse(e.data);
+                    switch (event) {
+                        case "client": {
+                            this.#client = data;
+                            resolve(this);
+
+                            done = true;
+                            ws.close();
+                        } break;
+                    }
+                });
+            });
+            ws.addEventListener("close", () => {
+                if (!done) reject(new Error("WebSocket closed before authentication"));
+                done = true;
+            });
+            ws.addEventListener("error", e => {
+                reject(e);
+
+                done = true;
+                ws.close();
+            });
+        });
+    }
 
     async authenticate() {
         try {
@@ -31,7 +65,7 @@ export class OAuth {
                         case "ready": {
                             const params = new URLSearchParams({
                                 response_type: "code",
-                                client_id: OAuth.#CLIENT,
+                                client_id: this.#client,
                                 redirect_uri: OAuth.#REDIRECT_URI,
                                 state: data.state,
                                 code_challenge: data.challenge,
@@ -49,7 +83,7 @@ export class OAuth {
                                     grant_type: "authorization_code",
                                     code: data.code,
                                     redirect_uri: OAuth.#REDIRECT_URI,
-                                    client_id: OAuth.#CLIENT,
+                                    client_id: this.#client,
                                     code_verifier: data.verifier
                                 })
                             })
@@ -106,7 +140,7 @@ export class OAuth {
                     body: new URLSearchParams({
                         grant_type: "refresh_token",
                         refresh_token: this.#token.refresh,
-                        client_id: OAuth.#CLIENT
+                        client_id: this.#client
                     })
                 })
                     .then(response => {

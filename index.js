@@ -33,8 +33,12 @@ const isCallbackRateLimited = (function(ip) {
 
     return ++entry.count > CALLBACK_RATE_LIMIT_MAX;
 });
-// server stuff
-const PORT = parseInt(process.env.PORT, 10) || 8000; // Toolforge (k8s backend) always sets PORT=8000
+
+// server
+const PORT = parseInt(process.env.PORT, 10) || 8000;
+const CLIENT = process.env.CLIENT;
+if (!CLIENT) throw new Error("CLIENT environment variable is not set");
+
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "src");
 const MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -138,6 +142,9 @@ wss.on("connection", ws => {
         switch (cmd) {
             case "ping": {
                 ws.send("pong");
+            } break;
+            case "client": {
+                ws.send(JSON.stringify({ event: "client", data: "c2513c585c4e5227f04b90cdf6cdd479" }));
             } break;
             case "auth": {
                 if (OAuthCallbackCache.has(state)) return;

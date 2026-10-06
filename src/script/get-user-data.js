@@ -81,13 +81,13 @@ const scheduler = {
 
 const mwFetch = async (getToken, project, params, retry = true) => {
     const token = await getToken();
-    const response = await fetch(`https://${project}/w/api.php`, {
+    const response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
         method: "POST",
         headers: {
             "Api-User-Agent": "Acorns/1.0 (https://github.com/LuniZunie/Acorns)",
             "Authorization": `Bearer ${token.access}`
         },
-        body: new URLSearchParams({ ...params, format: "json", formatversion: "2", origin: "*" })
+        body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
     });
 
     if (response.status === 401 && retry) return mwFetch(getToken, project, params, false);

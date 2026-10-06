@@ -2,36 +2,52 @@
 
 A Wikipedia SPI tool.
 
+## OAuth for local development
+
+To allow for local development, please follow these steps:
+1) Go to [the OAuth consumer registration page](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose/oauth2?wpname=Acorns&wpdescription=SPI+Tool&wpcallbackUrl=http://localhost:3000/callback&wpoauth2IsConfidential=0&wpagreement=1)
+2) Scroll down to where it says "Applicable grants" and check "High-volume (bot) access"
+3) Scroll to the bottom of the page and click "Propose consumer"
+4) Copy the `Client ID` on the confirmation page and store it for later.
+
+
 ## Server
 
-#### Clone the repository
+### Clone the repository
 ```bash
 git clone https://github.com/LuniZunie/Acorns.git
 cd Acorns
 ```
 
-#### Install dependencies
+### Install dependencies
 ```bash
 npm install
 ```
 
-#### Start the server
+### Setup
+
+```bash
+echo -e "PORT=3000\nCLIENT_ID=your_client_id" > .env
+```
+
+Replace `your_client_id` with the `Client ID` you obtained from the OAuth consumer.
+
+### Start the server
 ```bash
 npm start
 ```
 
 You should see the following in the console:
 ```
-WebSocket server running on ws://localhost:3000
-HTTP server running on http://localhost:3000
+HTTP server running on http://0.0.0.0:3000
+WebSocket server running on ws://0.0.0.0:3000
 ```
 
 ## Client
 
-### Checking connection
+### Client connection
 
-To check the connection to the server, open `http://localhost:3000` in your web browser.
-It will display "Connected to server." if the connection is successful.
+Go to `http://localhost:3000` in your web browser, you should now see a webpage.
 
 ### Getting user data
 
