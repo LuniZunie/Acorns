@@ -34,6 +34,7 @@ const isCallbackRateLimited = (function(ip) {
     return ++entry.count > CALLBACK_RATE_LIMIT_MAX;
 });
 // server stuff
+const PORT = parseInt(process.env.PORT, 10) || 8000; // Toolforge (k8s backend) always sets PORT=8000
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "src");
 const MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -57,7 +58,7 @@ const server = createServer(async (req, res) => {
     }
 
     let pathname;
-    try { pathname = decodeURIComponent(new URL(req.url, "http://0.0.0.0:8000").pathname); }
+    try { pathname = decodeURIComponent(new URL(req.url, `http://0.0.0.0:${PORT}`).pathname); }
     catch {
         res.writeHead(400);
         return res.end("Bad Request");
@@ -71,7 +72,7 @@ const server = createServer(async (req, res) => {
                 return res.end("Too Many Requests");
             }
 
-            const url = new URL(req.url, "http://0.0.0.0:8000");
+            const url = new URL(req.url, `http://0.0.0.0:${PORT}`);
 
             const code = url.searchParams.get("code");
             const state = url.searchParams.get("state");
@@ -159,7 +160,7 @@ wss.on("connection", ws => {
     });
 });
 
-server.listen(8000, "0.0.0.0", () => {
-    console.log("HTTP server running on http://0.0.0.0:8000");
-    console.log("WebSocket server running on ws://0.0.0.0:8000");
+server.listen(PORT, "0.0.0.0", () => {
+    console.log(`HTTP server running on http://0.0.0.0:${PORT}`);
+    console.log(`WebSocket server running on ws://0.0.0.0:${PORT}`);
 });

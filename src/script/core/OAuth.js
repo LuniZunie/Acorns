@@ -2,7 +2,8 @@ import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
     static #CLIENT = "c2513c585c4e5227f04b90cdf6cdd479";
-    static #REDIRECT_URI = "http://localhost:3000/callback";
+    static #REDIRECT_URI = `${location.origin}/callback`;
+    static #WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
 
     #token;
     #refreshing;
@@ -22,7 +23,7 @@ export class OAuth {
         let tab;
         let done = false;
         return new Promise((resolve, reject) => {
-            const ws = new WebSocket("ws://localhost:3000");
+            const ws = new WebSocket(OAuth.#WS_URL);
             ws.addEventListener("open", () => {
                 ws.send("#auth");
                 ws.addEventListener("message", e => {

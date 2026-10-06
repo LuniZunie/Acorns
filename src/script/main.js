@@ -1,4 +1,4 @@
-import { OAuth } from "../core/OAuth.js";
+import { OAuth } from "./core/OAuth.js";
 import getUserData from "./get-user-data.js";
 
 (async function(oauth) {
