@@ -86,7 +86,7 @@ const server = createServer(async (req, res) => {
                 callback({ code });
 
                 res.writeHead(200);
-                return res.end("You may now close this window.");
+                return res.end("You may close this window now.");
             } else {
                 res.writeHead(400);
                 return res.end("Bad Request");
