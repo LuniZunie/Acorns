@@ -466,15 +466,9 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
 
                     const mergedProjects = (globalUserInfo.merged ?? [ ])
                         .map(merge => ({ merge, project: new URL(merge.url).hostname }))
-                        .filter(({ project }) =>
-                            !projects.exclude.has(project) && (projects.all || projects.include.has(project))
-                        );
+                        .filter(({ project }) => !projects.exclude.has(project) && (projects.all || projects.include.has(project)));
 
-                    progress.total = mergedProjects.reduce(
-                        (total, { merge }) => total + getExpectedEditRequests(merge.editcount),
-                        0
-                    );
-
+                    progress.total = mergedProjects.reduce((total, { merge }) => total + getExpectedEditRequests(merge.editcount), 0);
                     for (const { merge, project } of mergedProjects) {
                         const projectData = {
                             project,
