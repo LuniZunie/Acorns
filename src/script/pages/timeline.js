@@ -228,13 +228,8 @@ export function RenderTimeline(data, requestedDate) {
         updateScrollTail();
     }
 
-    if (dates.length === 0) {
-        const $empty = document.createElement("p");
-        $empty.classList.add("edit-timeline-empty", "no-edits");
-        $empty.textContent = "No edits are available for this editing window.";
-        $list.appendChild($empty);
-        $navigation.hidden = true;
-    } else {
+    if (dates.length === 0) throw new Error("No dates found");
+    else {
         updateLoadedDays();
         updateNavigation();
         let scrollFrame = 0;

@@ -34,6 +34,39 @@ const isCallbackRateLimited = (function(ip) {
     return ++entry.count > CALLBACK_RATE_LIMIT_MAX;
 });
 
+// site matrix
+const sitematrix = { };
+let siteMatrixJson = JSON.stringify(sitematrix);
+
+const updateSiteMatrix = (function() { // gets a list of all mediawiki sites
+    fetch(`https://www.mediawiki.org/w/api.php`, {
+        method: "POST",
+        headers: {
+            "Api-User-Agent": "Acorns-Server/1.0 (https://github.com/LuniZunie/Acorns)",
+        },
+        body: new URLSearchParams({ action: "sitematrix", format: "json", formatversion: "2" })
+    })
+        .then(response => response.json())
+        .then(data => {
+            const temp = { };
+
+            const matrix = data.sitematrix ?? { };
+            delete matrix.count;
+            for (const sites of Object.values(matrix))
+                for (const site of Array.isArray(sites) ? sites : (sites.site || [ ])) {
+                    if (site.private) continue;
+                    temp[new URL(site.url).hostname] = site.dbname;
+                }
+
+            Object.assign(sitematrix, temp);
+            siteMatrixJson = JSON.stringify(sitematrix);
+        })
+        .catch(error => console.error(error));
+});
+
+updateSiteMatrix();
+setInterval(updateSiteMatrix, Time.minutes(30)); // update every 30 minutes
+
 // server
 const PORT = parseInt(process.env.PORT, 10) || 8000;
 const CLIENT = process.env.CLIENT;
@@ -69,6 +102,10 @@ const server = createServer(async (req, res) => {
     }
 
     switch (pathname) { // for custom handlers
+        case "/sitematrix": {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            return res.end(siteMatrixJson);
+        } break;
         case "/callback": {
             const ip = req.socket.remoteAddress ?? "unknown";
             if (isCallbackRateLimited(ip)) {

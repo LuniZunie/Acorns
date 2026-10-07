@@ -1,7 +1,6 @@
 import { $, $$ } from "./helpers/query-selector.js";
 
 import { NormalizeUser } from "./helpers/normalize-user.js";
-import { NormalizeProject } from "./helpers/normalize-project.js";
 import { SetUserColorSeed } from "./helpers/username-to-color.js";
 
 import { OAuth } from "./core/oauth.js";
@@ -33,13 +32,6 @@ if (url.searchParams.has("users")) {
 }
 
 const $projects = $("#project-pill-input");
-$projects.addEventListener("pills-changed", () => {
-    $projects.children.forEach($child => {
-        const normalized = NormalizeProject($child.value);
-        if (!normalized) $child.remove();
-        $child.value = normalized;
-    });
-});
 if (url.searchParams.has("projects")) {
     $projects.clear();
     url.searchParams.getAll("projects").forEach(project => $projects.paste(project));
@@ -57,6 +49,10 @@ if (url.searchParams.has("submit"))
     state.submit = url.searchParams.get("submit") === "1";
 
 window.history.replaceState(state, "", `${window.location.origin}${window.location.pathname}`);
+window.addEventListener("popstate", e => {
+    if (e.state?.reload)
+        location.reload();
+})
 
 const $submit = $("#input-screen-submit");
 const $cancel = $("#input-screen-cancel");
@@ -115,8 +111,39 @@ const setProgress = (value, instant = false) => {
     }
 };
 
-new OAuth().then(async function(oauth) {
-    await oauth.authenticate();
+Promise.all([
+    new OAuth().then(async oauth => await oauth.authenticate() && oauth),
+    fetch(`${window.location.origin}/sitematrix`).then(res => res.json())
+]).then(async function([ oauth, sitematrix ]) {
+    {
+        const suggestions = [ "*" ];
+        const temp = { set: new Set(), map: new Map() };
+        for (const [ key, value ] of Object.entries(sitematrix)) {
+            temp.set.add(value);
+            temp.map.set(key, value);
+            suggestions.push(key, value, `!${key}`, `!${value}`);
+        }
+
+        sitematrix = temp;
+        $projects.suggest(suggestions);
+    }
+
+    $projects.addEventListener("pills-changed", () => {
+        $projects.children.forEach($child => {
+            const normalized = $child.value.toLowerCase();
+            if (normalized === "*") $child.value = normalized;
+            else {
+                const exclude = normalized.startsWith("!");
+
+                let project = exclude ? normalized.slice(1) : normalized;
+                if (sitematrix.set.has(project)) project = project;
+                else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
+                else return $child.remove();
+
+                $child.value = `${exclude ? "!" : ""}${project}`;
+            }
+        });
+    });
 
     $submit.classList.remove("disabled");
     $submit.addEventListener("click", () => {
@@ -169,6 +196,8 @@ new OAuth().then(async function(oauth) {
                             $("#content").classList.remove("hidden");
                         };
                     }
+
+                    setProgress(1);
                 } break;
                 case "error": {
                     console.error(data);
@@ -204,4 +233,4 @@ new OAuth().then(async function(oauth) {
     });
 
     if (state.submit) $submit.click();
-}).catch(error => console.error(error));
+});

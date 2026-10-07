@@ -33,7 +33,8 @@ export function GetUserData(getToken, users, projectRules, callback = () => { })
             }
         } else if (message.type === "history") {
             const state = history.state ?? { };
-            history.replaceState({ ...state, ...message.state }, "");
+            history.replaceState({ ...state, submit: false, reload: true }, "");
+            history.pushState({ ...state, ...message.state }, "");
         } else if (message.type === "result") {
             const { status, data } = message.result;
             if (status === "error") {

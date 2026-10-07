@@ -134,6 +134,10 @@
             color: $accent-ink;
         }
 
+        &.hidden {
+            display: none;
+        }
+
         &:hover {
             color: $text;
         }

@@ -148,26 +148,6 @@
     background: $surface-muted;
 }
 
-.edit-timeline-empty {
-    display: flex;
-    align-items: center;
-    height: var(--timeline-entry-height);
-    padding: 0 0.75rem;
-    margin: 0;
-    color: $muted;
-    font-size: 0.85rem;
-    font-style: italic;
-}
-
-.edit-timeline-empty.no-edits {
-    height: auto;
-    padding: 2rem;
-    border: 1px solid $border;
-    border-radius: 10px;
-    background: $surface;
-    font-style: normal;
-}
-
 .edit-timeline-navigation {
     position: sticky;
     top: 50%;
@@ -180,6 +160,10 @@
     background: rgba(255, 254, 251, 0.94);
     box-shadow: 0 2px 8px rgba(54, 72, 54, 0.06);
     transform: translateY(-50%);
+
+    &[hidden] {
+        display: none;
+    }
 }
 
 .edit-timeline-date-button {

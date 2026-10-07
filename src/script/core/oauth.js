@@ -2,8 +2,8 @@ import { $ } from "../helpers/query-selector.js";
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
-    static #REDIRECT_URI = `${location.origin}/callback`;
-    static #WS_URL = `${location.protocol.replace("http", "ws")}//${location.host}`;
+    static #REDIRECT_URI = `${window.location.origin}/callback`;
+    static #WS_URL = `${window.location.protocol.replace("http", "ws")}//${window.location.host}`;
 
     #client;
 

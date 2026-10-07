@@ -4,17 +4,33 @@ import { RenderTimecards } from "../pages/timecards.js";
 import { RenderCalendar } from "../pages/calendar.js";
 import { RenderTimeline } from "../pages/timeline.js";
 
-export function LoadResults(results) { self.results = results; }
-export function ChangeTab(tab) {
+export function LoadResults(results) {
+    self.results = results;
+
+    let hasAnyEdits = false;
+    for (const user of results)
+        for (const project of user.projects) {
+            hasAnyEdits = Boolean(project.edits.length);
+            if (hasAnyEdits) break;
+        }
+
+    $("#tabs > .tab-button[data-tab='timecards']").classList.toggle("hidden", !hasAnyEdits);
+    $("#tabs > .tab-button[data-tab='calendar']").classList.toggle("hidden", !hasAnyEdits);
+    $("#tabs > .tab-button[data-tab='timeline']").classList.toggle("hidden", !hasAnyEdits);
+
+    $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length)
+}
+export function ChangeTab(tab, circular = false) {
     const state = window.history.state ?? { };
     if (state.tab !== tab) delete state.data;
 
-    const $tab = $(`#tabs > .tab-button[data-tab="${tab}"]`);
+    const $tab = $(`#tabs > .tab-button:not(.hidden)[data-tab="${tab}"]`);
     if (!$tab) {
         delete state.tab;
         window.history.replaceState(state, "");
 
-        throw new Error(`Tab "${tab}" not found`);
+        if (circular) throw new Error("Could not find valid tab target");
+        return ChangeTab($("#tabs > .tab-button.active").dataset.tab, true);
     } else state.tab = tab;
 
     window.history.replaceState(state, "");

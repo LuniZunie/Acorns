@@ -78,7 +78,7 @@ const mwFetch = async (getToken, project, params, retry = true) => {
     const response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
         method: "POST",
         headers: {
-            "Api-User-Agent": "Acorns/1.0 (https://github.com/LuniZunie/Acorns)",
+            "Api-User-Agent": "Acorns-Client/1.0 (https://github.com/LuniZunie/Acorns)",
             "Authorization": `Bearer ${token.access}`
         },
         body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
@@ -92,7 +92,7 @@ const mwFetch = async (getToken, project, params, retry = true) => {
     return json;
 };
 
-function GetUserData(getToken, users, projectRules, callback = () => { }) {
+async function GetUserData(getToken, users, projectRules, callback = () => { }) {
     if (typeof getToken !== "function")
         throw new Error("(get-user-data) Token getter must be a function");
     if (!Array.isArray(users))
@@ -104,29 +104,72 @@ function GetUserData(getToken, users, projectRules, callback = () => { }) {
 
     users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(NormalizeUser).filter(Boolean)));
 
+    let sitematrix = await fetch(`${self.location.origin}/sitematrix`).then(res => res.json());
+    {
+        const temp = { set: new Set(), map: new Map(), reverse: new Map() };
+        for (const [ key, value ] of Object.entries(sitematrix)) {
+            temp.set.add(value);
+            temp.map.set(key, value);
+            temp.reverse.set(value, key);
+        }
+
+        sitematrix = temp;
+    }
+
     const projects = { all: false, include: new Set(), exclude: new Set() };
     for (const rule of projectRules) {
-        if (rule === "*") {
+        const normalized = rule.toLowerCase();
+        if (normalized === "*") {
             projects.all = true;
             projects.include.clear();
             projects.exclude.clear();
-        } else if (rule.startsWith("-")) {
+        } else if (normalized.startsWith("!")) {
+            let project = normalized.slice(1);
+            if (sitematrix.set.has(project)) project = project;
+            else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
+            else continue;
+
             if (projects.all)
-                projects.exclude.add(rule.slice(1));
+                projects.exclude.add(project);
             else
-                projects.include.delete(rule.slice(1));
+                projects.include.delete(project);
         } else {
+            let project = normalized;
+            if (sitematrix.set.has(project)) project = project;
+            else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
+            else continue;
+
             if (projects.all)
-                projects.exclude.delete(rule);
+                projects.exclude.delete(project);
             else
-                projects.include.add(rule);
+                projects.include.add(project);
         }
     }
 
     const state = { users: users.slice(), projects: [ ] };
+
     if (projects.all) state.projects.push("*");
-    for (const project of projects.include) state.projects.push(project);
-    for (const project of projects.exclude) state.projects.push(`-${project}`);
+
+    {
+        const temp = new Set();
+        for (const project of projects.include)
+            if (sitematrix.set.has(project)) {
+                state.projects.push(project);
+                temp.add(sitematrix.reverse.get(project));
+            }
+        projects.include = temp;
+    }
+
+    {
+        const temp = new Set();
+        for (const project of projects.exclude)
+            if (sitematrix.set.has(project)) {
+                state.projects.push(`!${project}`);
+                temp.add(sitematrix.reverse.get(project));
+            }
+        projects.exclude = temp;
+    }
+
     postMessage({ type: "history", state });
 
     if (users.length === 0) {
