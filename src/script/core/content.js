@@ -7,16 +7,6 @@ import { RenderTimeline } from "../pages/timeline.js";
 export function LoadResults(results) {
     self.results = results;
 
-    let hasAnyEdits = false;
-    for (const user of results)
-        for (const project of user.projects) {
-            hasAnyEdits = Boolean(project.edits.length);
-            if (hasAnyEdits) break;
-        }
-
-    $("#tabs > .tab-button[data-tab='timecards']").classList.toggle("hidden", !hasAnyEdits);
-    $("#tabs > .tab-button[data-tab='calendar']").classList.toggle("hidden", !hasAnyEdits);
-
     $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length);
 }
 export function ChangeTab(tab, circular = false) {

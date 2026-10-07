@@ -180,6 +180,7 @@ Promise.all([
                     } else {
                         $progress.classList.add("success");
                         progressCalback = () => {
+                            console.log(data);
                             LoadResults(data);
 
                             $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));

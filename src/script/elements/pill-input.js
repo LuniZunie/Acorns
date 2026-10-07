@@ -297,7 +297,7 @@ class PillInput extends HTMLElement {
     }
 
     #updateSuggestions() {
-        if (!this.#$suggestions) return;
+        if (!this.#getSuggestions) return;
 
         const text = this.#$input.value.trim();
         const matches = this.#getSuggestions(text)

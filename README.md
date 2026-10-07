@@ -63,7 +63,7 @@ Parsed users with return the following data structure (note the information is m
         "timestamp": "1970-01-01T00:00:00Z"
     },
     "locked": true, /* Globally locked? */
-    "blocks": [ /* Global blocks info */
+    "block": [ /* Current global blocks */
         {
             "id": "0",
             "anononly": false,
@@ -76,6 +76,27 @@ Parsed users with return the following data structure (note the information is m
             "timestamp": "1970-01-01T00:00:00Z",
             "expiry": "infinity",
             "reason": "Testing"
+        }
+    ],
+    "blocks": [ /* Global block log events */
+        {
+            "logid": 1,
+            "title": "User:Example",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "comment": "Testing",
+            "params": { },
+            "user": "WMF-Office",
+            "unblock": false
+        }
+    ],
+    "locks": [ /* Global lock-status log events */
+        {
+            "logid": 2,
+            "title": "User:Example@global",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "comment": "Testing",
+            "params": { },
+            "user": "WMF-Office"
         }
     ],
     "edit_count": 42, /* Global edit count */
@@ -105,7 +126,7 @@ Parsed users with return the following data structure (note the information is m
                 "method": "login",
                 "timestamp": "1970-01-01T00:00:00Z"
             },
-            "blocks": [
+            "block": [ /* Current local blocks */
                 {
                     "id": "0",
                     "by": "Administrator",
@@ -121,6 +142,17 @@ Parsed users with return the following data structure (note the information is m
                     "block-hidden": false,
                     "allowusertalk": false,
                     "partial": false
+                }
+            ],
+            "blocks": [ /* Local block log events; fetched for projects with edits */
+                {
+                    "logid": 3,
+                    "title": "User:Example",
+                    "params": { },
+                    "unblock": false,
+                    "user": "Administrator",
+                    "comment": "Testing",
+                    "timestamp": "1970-01-01T00:00:00Z"
                 }
             ],
             "edit_count": 1,

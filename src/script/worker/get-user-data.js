@@ -250,7 +250,7 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
             }
         };
 
-        const data = { missing: true, user, groups: [ ], rights: [ ], blocks: [ ], uploads: [ ] };
+        const data = { missing: true, user, groups: [ ], rights: [ ], block: [ ], blocks: [ ], uploads: [ ], locks: [ ] };
         const projectsMap = new Map();
 
         const buildEdit = edit => {
@@ -302,6 +302,48 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
             })));
             if (response.continue)
                 enqueue([ [ "commons.wikimedia.org", { ...uploadsBody, ...response.continue }, uploadsHandler, 0 ] ]);
+        };
+
+        const locksBody = {
+            action: "query",
+            list: "logevents",
+            letype: "globalauth",
+            leaction: "globalauth/setstatus",
+            letitle: `User:${user}@global`,
+            lelimit: "max"
+        };
+        const locksHandler = response => {
+            AddArrayToArray(data.locks, (response.query.logevents || [ ]).map(le => ({
+                logid: le.logid,
+                title: le.title,
+                timestamp: le.timestamp,
+                comment: le.comment,
+                params: le.params,
+                user: le.user
+            })));
+            if (response.continue)
+                enqueue([ [ "meta.wikimedia.org", { ...locksBody, ...response.continue }, locksHandler, 0 ] ]);
+        };
+
+        const globalBlocksBody = {
+            action: "query",
+            list: "logevents",
+            letype: "gblblock",
+            letitle: `User:${user}`,
+            lelimit: "max"
+        };
+        const globalBlocksHandler = response => {
+            AddArrayToArray(data.blocks, (response.query.logevents || [ ]).map(le => ({
+                logid: le.logid,
+                title: le.title,
+                timestamp: le.timestamp,
+                comment: le.comment,
+                params: le.params,
+                user: le.user,
+                unblock: le.action === "gunblock"
+            })));
+            if (response.continue)
+                enqueue([ [ "meta.wikimedia.org", { ...globalBlocksBody, ...response.continue }, globalBlocksHandler, 0 ] ]);
         };
 
         const contribsBody = {
@@ -418,7 +460,7 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                     params,
                     response => {
                         if (response.query.blocks)
-                            AddArrayToArray(projectsMap.get(project).blocks, response.query.blocks.map(({ user: _, ...block }) =>
+                            AddArrayToArray(projectsMap.get(project).block, response.query.blocks.map(({ user: _, ...block }) =>
                                 ({ ...block, reason: block.reason || "" })
                             ));
 
@@ -431,6 +473,31 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                     1
                 ]
             ]);
+        };
+
+        const localBlocksEnqueue = project => {
+            const params = {
+                action: "query",
+                list: "logevents",
+                letype: "block",
+                letitle: `User:${user}`,
+                lelimit: "max"
+            };
+            const handler = response => {
+                AddArrayToArray(projectsMap.get(project).blocks, (response.query.logevents || [ ]).map(le => ({
+                    logid: le.logid,
+                    title: le.title,
+                    timestamp: le.timestamp,
+                    comment: le.comment,
+                    params: le.params,
+                    user: le.user,
+                    unblock: le.action === "unblock"
+                })));
+                if (response.continue)
+                    enqueue([ [ project, { ...params, ...response.continue }, handler, 0 ] ]);
+            };
+
+            enqueue([ [ project, params, handler, 0 ] ]);
         };
 
         enqueue([
@@ -459,9 +526,9 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                     data.groups = globalUser.groups || [ ];
                     data.rights = globalUser.rights || [ ];
                     data.locked = globalUser.locked;
-                    data.blocks = (response.query.globalblocks || [ ]).map(({ target: _, ...block }) =>
+                    AddArrayToArray(data.block, (response.query.globalblocks || [ ]).map(({ target: _, ...block }) =>
                         ({ ...block, reason: block.reason || "" })
-                    );
+                    ));
                     data.missing = false;
 
                     const mergedProjects = (globalUserInfo.merged ?? [ ])
@@ -475,21 +542,26 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                             code: merge.wiki,
                             registration: { method: merge.method, timestamp: merge.timestamp },
                             edit_count: merge.editcount,
+                            block: [ ],
                             blocks: [ ],
                             edits: [ ]
                         };
                         projectsMap.set(project, projectData);
                         data.projects.push(projectData);
 
-                        if (merge.editcount > 0)
+                        if (merge.editcount > 0) {
                             editsEnqueue(project, contribsBody);
+                            localBlocksEnqueue(project);
+                        }
                     }
 
                     progress.update(0);
                 },
                 2
             ],
-            [ "commons.wikimedia.org", uploadsBody, uploadsHandler, 0 ]
+            [ "commons.wikimedia.org", uploadsBody, uploadsHandler, 0 ],
+            [ "meta.wikimedia.org", locksBody, locksHandler, 0 ],
+            [ "meta.wikimedia.org", globalBlocksBody, globalBlocksHandler, 0 ]
         ]);
     });
 
