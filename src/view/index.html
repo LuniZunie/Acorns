@@ -14,8 +14,13 @@
         <link rel="stylesheet" href="/css/elements/auth-popup.css" />
         <link rel="stylesheet" href="/css/elements/pill-input.css" />
 
+        <link rel="stylesheet" href="/css/pages/timecards.css" />
+        <link rel="stylesheet" href="/css/pages/calendar.css" />
+        <link rel="stylesheet" href="/css/pages/timeline.css" />
+
         <script src="/script/elements/pill-input.js"></script>
         <script type="module" src="/script/elements/help-tooltip.js"></script>
+        <script type="module" src="/script/elements/share.js"></script>
 
         <script type="module" src="/script/main.js"></script>
     </head>
@@ -35,7 +40,7 @@
                     <span>Projects</span>
                     <div class="help">
                         <button type="button" class="help-button" aria-label="Help" aria-expanded="false" aria-controls="project-help"><i class="fas fa-circle-question"></i></button>
-                        <div id="project-help" class="tooltip" role="tooltip" hidden>
+                        <div id="project-help" class="tooltip hidden" role="tooltip">
                             <ul>
                                 <li><code>*</code> - Include every project</li>
                                 <li><code>meta.wikimedia.org</code> - Include a project</li>
@@ -61,12 +66,18 @@
         </div>
 
         <div id="content" class="hidden">
-            <div id="tabs">
+            <nav id="tabs" aria-label="Result views">
                 <button type="button" class="tab-button active" data-tab="overview">Overview</button>
                 <button type="button" class="tab-button" data-tab="timecards">Timecards</button>
-            </div>
+                <button type="button" class="tab-button" data-tab="calendar">Calendar</button>
+                <button type="button" class="tab-button" data-tab="timeline">Timeline</button>
+            </nav>
             <div id="tab-content">
 
+            </div>
+            <div id="share-control">
+                <button type="button" id="share-button"><i class="fas fa-share-nodes" aria-hidden="true"></i>Share</button>
+                <div id="share-copied-tooltip" role="status" aria-live="polite" aria-hidden="true">Copied!</div>
             </div>
         </div>
     </body>

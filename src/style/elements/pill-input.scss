@@ -12,16 +12,16 @@
     flex-wrap: wrap;
     align-items: center;
     padding: 6px 8px;
-    border: 1px solid #cbd3df;
+    border: 1px solid $border;
     border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(25, 40, 65, 0.05);
+    background: $surface;
+    box-shadow: 0 1px 3px rgba(54, 72, 54, 0.05);
     cursor: text;
     transition: border-color 150ms ease, box-shadow 150ms ease;
 
     &:not(.disabled) {
         &:hover {
-            border-color: #9aa9bd;
+            border-color: #afc1a7;
         }
 
         &:focus-within {
@@ -31,7 +31,7 @@
     }
 
     &.disabled {
-        background: #f5f7fa;
+        background: $surface-muted;
         cursor: not-allowed;
 
         & > .text {
@@ -51,10 +51,10 @@
             align-items: center;
             gap: 5px;
             padding: 3px 4px 3px 10px;
-            border: 1px solid #dce7f8;
+            border: 1px solid #d8e5d2;
             border-radius: 999px;
-            background: #eef3fc;
-            color: #234b87;
+            background: $accent-soft;
+            color: $accent-ink;
             font-size: 0.875rem;
             line-height: 1.4;
             overflow-wrap: anywhere;
@@ -66,7 +66,7 @@
                 place-items: center;
                 border: none;
                 background: none;
-                color: #58749e;
+                color: #71866c;
                 cursor: pointer;
                 padding: 0;
                 line-height: 1;
@@ -75,8 +75,8 @@
 
                 &:hover,
                 &:focus-visible {
-                    background: #d7e4f8;
-                    color: #183d74;
+                    background: #d3e1cb;
+                    color: #3f5a40;
                 }
 
                 &:focus-visible {

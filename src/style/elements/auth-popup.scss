@@ -1,13 +1,15 @@
+@use "../tokens" as *;
+
 #auth-popup {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background-color: white;
+    background-color: $surface;
     padding: 20px;
-    border: 1px solid #ccc;
+    border: 1px solid $border;
     border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 28px rgba(54, 72, 54, 0.16);
     z-index: 1000;
     transition: opacity 0.3s ease;
 
@@ -24,7 +26,7 @@
 #auth-popup-blocker {
     position: fixed;
     inset: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(44, 58, 45, 0.38);
     z-index: 999;
     transition: opacity 0.3s ease;
 

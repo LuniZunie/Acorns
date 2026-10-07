@@ -1,23 +1,26 @@
 import { $, $$ } from "../helpers/query-selector.js";
 
-window.addEventListener("popstate", event => {
-    if (event.state?.action === "change-tab")
-        ChangeTab(event.state.tab, false);
-});
+import { RenderTimecards } from "../pages/timecards.js";
+import { RenderCalendar } from "../pages/calendar.js";
+import { RenderTimeline } from "../pages/timeline.js";
 
 export function LoadResults(results) { self.results = results; }
-export function ChangeTab(tab, pushState = true) {
+export function ChangeTab(tab) {
+    const state = window.history.state ?? { };
+    if (state.tab !== tab) delete state.data;
+
     const $tab = $(`#tabs > .tab-button[data-tab="${tab}"]`);
-    if (!$tab) throw new Error(`Tab "${tab}" not found`);
+    if (!$tab) {
+        delete state.tab;
+        window.history.replaceState(state, "");
+
+        throw new Error(`Tab "${tab}" not found`);
+    } else state.tab = tab;
+
+    window.history.replaceState(state, "");
 
     $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
     $tab.classList.add("active");
-
-    if (pushState) {
-        const url = new URL(window.location.href);
-        url.searchParams.set("tab", tab);
-        history.pushState({ action: "change-tab", tab }, "", url);
-    }
 
     $("#tab-content").innerHTML = "";
     LoadTabContent(tab);
@@ -29,16 +32,15 @@ function LoadTabContent(tab) {
 
         } break;
         case "timecards": {
-            for (const user of self.results) {
-                const timecard = Array.from({ length: 7 }, _ => Array.from({ length: 24 }, _ => 0n));
-                for (const project of user.projects)
-                    for (const edit of project.edits) {
-                        const timestamp = new Date(edit.timestamp);
-                        timecard[timestamp.getUTCDay()][timestamp.getUTCHours()]++;
-                    }
-
-                console.log(timecard);
-            }
+            RenderTimecards(self.results);
+        } break;
+        case "calendar": {
+            const state = window.history.state ?? { };
+            RenderCalendar(self.results, state.data);
+        } break;
+        case "timeline": {
+            const state = window.history.state ?? { };
+            RenderTimeline(self.results, state.data);
         } break;
         default: console.warn(`Tab "${tab}" has no content to load`);
     }

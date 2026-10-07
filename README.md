@@ -49,63 +49,9 @@ WebSocket server running on ws://0.0.0.0:3000
 
 Go to `http://localhost:3000` in your web browser, you should now see a webpage.
 
-### Getting user data
-
-The following code demonstrates how to communicate with the server from the client side.
-
-```javascript
-import getUserData from "/script/get-user-data.js";
-
-const TOKEN = "";
-
-/*
-    Username Note:
-
-    The server automatically does the following for usernames:
-    1. Removes leading and trailing whitespace.
-    2. Replaces underscores with spaces.
-    3. Removes namespace prefixes (e.g., "User:").
-    4. Capitalizes the first letter of the username.
-    5. Removes duplicate usernames
-
-    Project Rules Note:
-
-    Rules are applied in the order they are specified.
-    "*" - Parses every project
-    "meta.wikimedia.org" - Adds meta.wikimedia.org as a project to be parsed
-    "-meta.wikimedia.org" - Excludes meta.wikimedia.org from being parsed
-*/
-new OAuth().then(async function(oauth) {
-    await oauth.authenticate();
-    getUserData(() => oauth.access(), [ /* usernames go here */ ], [ /* project rules go here */ ], function callback({ status, data }) {
-        switch (status) {
-            case "progress": {
-                /*
-                    data is
-                        A decimal from 0 to 1 (inclusive) representing the progress of the request.
-                */
-            } break;
-            case "done": {
-                /*
-                    data is
-                        An object with two properties:
-                            results - An array of user data objects for each user that was successfully parsed.
-                                If a user does not exist, the corresponding entry is removed.
-                            url - A URL that can be used to make the same request.
-                */
-            } break;
-            case "error": {
-                /*
-                    data is
-                        A string containing the error message from the server.
-                */
-            } break;
-        }
-    });
-}).catch(error => /* Handle the error here */);
-```
-
 ### Using the retrieved user data
+
+User data retrieval runs in a web worker so API requests and revision parsing do not block the client interface.
 
 Parsed users with return the following data structure (note the information is mock data):
 

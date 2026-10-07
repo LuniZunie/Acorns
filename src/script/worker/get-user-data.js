@@ -1,26 +1,20 @@
-import { normalizeUser } from "./helpers/normalize-user.js";
-import { addArrayToArray } from "./helpers/add-array-to-array.js";
-import { batchArray } from "./helpers/batch-array.js";
-import { Time } from "./helpers/time.js";
+import { Time } from "../helpers/time.js";
+
+import { AddArrayToArray } from "../helpers/add-array-to-array.js";
+import { BatchArray } from "../helpers/batch-array.js";
+
+import { NormalizeUser } from "../helpers/normalize-user.js";
+import { ParseWikitext } from "../helpers/parse-wikitext.js";
 
 const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .95);
 const RATE_LIMIT_EXEMPT = 1;
 const EDIT_BATCH = 50;
 const MAX_USER_CONTRIBUTIONS_PER_REQUEST = 500;
 
-const rCAT = /(?<=\[\[Category:)([^\]|]+)/gi;
-const rIMG = /((?<=\[\[:?(File|Image|Media):)([^\]|]+)|(=[^\n\[\]{}\\/<>#|]+?\.(?:tiff?|png|gif|jpe?g|webp|xcf|pdf|midi?|og[gva]|svg|djvu|flac|opus|wav|webm|mp3|mpe?g)))/gi;
-const rLINK = /(?:https?:|(?<=[\[\s=|]))\/\/[^\s\[\]<>"|{}]+/gi;
-
-const parseWikitext = wikitext => {
-    if (typeof wikitext !== "string")
-        return { c: [ ], i: [ ], l: [ ], d: true };
-    return {
-        c: (wikitext.match(rCAT) || [ ]).map(match => match.trim().replaceAll("_", " ")),
-        i: (wikitext.match(rIMG) || [ ]).map(match => match.replace(/^=/, "").trim().replaceAll("_", " ")),
-        l: (wikitext.match(rLINK) || [ ]).map(match => match.trim().replaceAll("_", " ")),
-        d: true
-    };
+const getExpectedEditRequests = editCount => {
+    if (!Number.isFinite(editCount) || editCount <= 0) return 0;
+    return Math.ceil(editCount / MAX_USER_CONTRIBUTIONS_PER_REQUEST) +
+        Math.ceil(editCount / EDIT_BATCH) * 2;
 };
 
 const waitUntil = async time => { // makes sure we never undershoot the wait even slightly
@@ -41,7 +35,7 @@ const scheduler = {
     ongoing: new Set(),
 
     enqueue(items) {
-        addArrayToArray(this.queue, items);
+        AddArrayToArray(this.queue, items);
         if (!this.running) this.run();
     },
 
@@ -53,8 +47,8 @@ const scheduler = {
                     // highest priority first; first-queued wins ties
                     let best = 0;
                     const length = this.queue.length;
-                    if (length < 1e4)
-                        for (let i = 1; i < this.queue.length; i++)
+                    if (length < 1e4) // only perform the full search for smaller queues, clears up performance for very large queues
+                        for (let i = 1; i < length; i++)
                             if (this.queue[i].priority > this.queue[best].priority) best = i;
 
                     const [ item ] = this.queue.splice(best, 1);
@@ -98,7 +92,7 @@ const mwFetch = async (getToken, project, params, retry = true) => {
     return json;
 };
 
-export default function(getToken, users, projectRules, callback = () => { }) {
+function GetUserData(getToken, users, projectRules, callback = () => { }) {
     if (typeof getToken !== "function")
         throw new Error("(get-user-data) Token getter must be a function");
     if (!Array.isArray(users))
@@ -108,13 +102,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
     if (typeof callback !== "function")
         throw new Error("(get-user-data) Invalid callback");
 
-    users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(normalizeUser).filter(Boolean)));
-
-    if (users.length === 0) {
-        callback({ status: "progress", data: 1 });
-        callback({ status: "done", data: [ ] });
-        return { close: () => { } };
-    }
+    users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(NormalizeUser).filter(Boolean)));
 
     const projects = { all: false, include: new Set(), exclude: new Set() };
     for (const rule of projectRules) {
@@ -133,6 +121,18 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             else
                 projects.include.add(rule);
         }
+    }
+
+    const state = { users: users.slice(), projects: [ ] };
+    if (projects.all) state.projects.push("*");
+    for (const project of projects.include) state.projects.push(project);
+    for (const project of projects.exclude) state.projects.push(`-${project}`);
+    postMessage({ type: "history", state });
+
+    if (users.length === 0) {
+        callback({ status: "progress", data: 1 });
+        callback({ status: "done", data: [ ] });
+        return { close: () => { } };
     }
 
     const cancel = { cancelled: false };
@@ -230,17 +230,11 @@ export default function(getToken, users, projectRules, callback = () => { }) {
         };
 
         const finalize = () => {
-            for (const projectData of projectsMap.values())
-                for (const edit of projectData.edits)
-                    if (edit.A) buildEdit(edit); // revisions the API never returned count as empty
-
             if (progress.done < progress.total) {
                 progress.done = progress.total;
                 progress.update(0);
             }
 
-            if (data.missing) return resolve(null);
-            delete data.missing;
             resolve(data);
         };
 
@@ -256,7 +250,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             lelimit: "max"
         };
         const uploadsHandler = response => {
-            addArrayToArray(data.uploads, (response.query.logevents || [ ]).map(le => ({
+            AddArrayToArray(data.uploads, (response.query.logevents || [ ]).map(le => ({
                 logid: le.logid,
                 title: le.title,
                 timestamp: le.timestamp,
@@ -287,7 +281,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             for (const page of response.query.pages || [ ])
                 for (const rev of page.revisions || [ ])
                     for (const edit of lookup(rev.revid)) {
-                        edit[target] = parseWikitext(revisionContent(rev));
+                        edit[target] = ParseWikitext(revisionContent(rev));
                         if (edit[other].d) buildEdit(edit);
                     }
         };
@@ -316,7 +310,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
                 ]);
             };
 
-            for (const batch of batchArray(edits, EDIT_BATCH)) {
+            for (const batch of BatchArray(edits, EDIT_BATCH)) {
                 const baseRevids = [ ];
                 for (const batchEdit of batch) {
                     const edit = {
@@ -381,7 +375,7 @@ export default function(getToken, users, projectRules, callback = () => { }) {
                     params,
                     response => {
                         if (response.query.blocks)
-                            addArrayToArray(projectsMap.get(project).blocks, response.query.blocks.map(({ user: _, ...block }) =>
+                            AddArrayToArray(projectsMap.get(project).blocks, response.query.blocks.map(({ user: _, ...block }) =>
                                 ({ ...block, reason: block.reason || "" })
                             ));
 
@@ -427,10 +421,18 @@ export default function(getToken, users, projectRules, callback = () => { }) {
                     );
                     data.missing = false;
 
-                    for (const merge of globalUserInfo.merged ?? [ ]) {
-                        const project = new URL(merge.url).hostname;
-                        if (projects.exclude.has(project) || !(projects.all || projects.include.has(project))) continue;
+                    const mergedProjects = (globalUserInfo.merged ?? [ ])
+                        .map(merge => ({ merge, project: new URL(merge.url).hostname }))
+                        .filter(({ project }) =>
+                            !projects.exclude.has(project) && (projects.all || projects.include.has(project))
+                        );
 
+                    progress.total = mergedProjects.reduce(
+                        (total, { merge }) => total + getExpectedEditRequests(merge.editcount),
+                        0
+                    );
+
+                    for (const { merge, project } of mergedProjects) {
                         const projectData = {
                             project,
                             code: merge.wiki,
@@ -442,12 +444,8 @@ export default function(getToken, users, projectRules, callback = () => { }) {
                         projectsMap.set(project, projectData);
                         data.projects.push(projectData);
 
-                        if (merge.editcount > 0) {
-                            progress.total += Math.ceil(merge.editcount / MAX_USER_CONTRIBUTIONS_PER_REQUEST); // contributions requests
-                            progress.total += Math.ceil(merge.editcount / EDIT_BATCH) * 2; // revision content requests (edits and their parents)
-
+                        if (merge.editcount > 0)
                             editsEnqueue(project, contribsBody);
-                        }
                     }
 
                     progress.update(0);
@@ -477,33 +475,49 @@ export default function(getToken, users, projectRules, callback = () => { }) {
             if (finished) return;
             finished = true;
 
-            results = results.filter(Boolean);
-            const url = new URL(location.href);
-
-            url.searchParams.delete("user");
-            url.searchParams.set("user", results.map(user => user.user).join(","));
-
-            const projectParam = [ ];
-            if (projects.all) projectParam.push("*");
-            for (const project of projects.include) projectParam.push(project);
-            for (const project of projects.exclude) projectParam.push(`-${project}`);
-            url.searchParams.delete("project");
-            url.searchParams.set("projet", projectParam.join(","))
-
-            url.searchParams.delete("submit");
-            url.searchParams.set("submit", "true");
-
-            if (url.searchParams.has("tab")) {
-                const tab = url.searchParams.get("tab");
-                url.searchParams.delete("tab");
-                url.searchParams.set("tab", tab);
-            }
-
-            callback({ status: "done", data: { results, url: url.toString() } });
+            callback({ status: "done", data: results.filter(Boolean) });
         })
-        .catch(error => {
-            fail(error);
-        });
+        .catch(error => { fail(error); });
 
     return { close: () => { cancel.cancelled = true; } };
 }
+
+export default GetUserData;
+
+const tokenRequests = new Map();
+let nextTokenRequestId = 0;
+
+const requestToken = () => new Promise((resolve, reject) => {
+    const id = nextTokenRequestId++;
+    tokenRequests.set(id, { resolve, reject });
+    postMessage({ type: "token-request", id });
+});
+
+self.addEventListener("message", event => {
+    const message = event.data;
+
+    if (message.type === "token-response") {
+        const request = tokenRequests.get(message.id);
+        if (!request) return;
+        tokenRequests.delete(message.id);
+
+        if (message.error)
+            request.reject(new Error(message.error));
+        else
+            request.resolve(message.token);
+        return;
+    }
+
+    if (message.type !== "start") return;
+
+    GetUserData(requestToken, message.users, message.projectRules, result => {
+        if (result.status === "error") {
+            result.data = {
+                message: String(result.data),
+                name: result.data?.name || "Error",
+                stack: result.data?.stack
+            };
+        }
+        postMessage({ type: "result", result });
+    });
+});

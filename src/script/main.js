@@ -1,36 +1,62 @@
 import { $, $$ } from "./helpers/query-selector.js";
 
-import { normalizeUser } from "./helpers/normalize-user.js";
-import { normalizeProject } from "./helpers/normalize-project.js";
+import { NormalizeUser } from "./helpers/normalize-user.js";
+import { NormalizeProject } from "./helpers/normalize-project.js";
+import { SetUserColorSeed } from "./helpers/username-to-color.js";
 
 import { OAuth } from "./core/oauth.js";
+import { GetUserData } from "./core/get-user-data.js";
 import { LoadResults, ChangeTab } from "./core/content.js";
 
-import getUserData from "./get-user-data.js";
+const url = new URL(window.location.href);
+const state = window.history.state ?? { };
 
-const params = new URLSearchParams(location.search);
+if (url.searchParams.has("seed"))
+    state.seed = parseInt(url.searchParams.get("seed"), 10);
+SetUserColorSeed(state.seed || 0);
 
 const $users = $("#user-pill-input");
 $users.addEventListener("pills-changed", () => {
     $users.children.forEach($child => {
-        const normalized = normalizeUser($child.value);
+        const normalized = NormalizeUser($child.value);
         if (!normalized) $child.remove();
         $child.value = normalized;
     });
 });
-if (params.has("user")) $users.clear();
-params.getAll("user").forEach(user => $users.paste(user));
+if (url.searchParams.has("users")) {
+    $users.clear();
+    url.searchParams.getAll("users").forEach(user => $users.paste(user));
+    state.users = $users.values();
+} else if (Array.isArray(state.users)) {
+    $users.clear();
+    state.users.forEach(user => $users.paste(user));
+}
 
-const $project = $("#project-pill-input");
-$project.addEventListener("pills-changed", () => {
-    $project.children.forEach($child => {
-        const normalized = normalizeProject($child.value);
+const $projects = $("#project-pill-input");
+$projects.addEventListener("pills-changed", () => {
+    $projects.children.forEach($child => {
+        const normalized = NormalizeProject($child.value);
         if (!normalized) $child.remove();
         $child.value = normalized;
     });
 });
-if (params.has("project")) $project.clear();
-params.getAll("project").forEach(project => $project.paste(project));
+if (url.searchParams.has("projects")) {
+    $projects.clear();
+    url.searchParams.getAll("projects").forEach(project => $projects.paste(project));
+    state.projects = $projects.values();
+} else if (Array.isArray(state.projects)) {
+    $projects.clear();
+    state.projects.forEach(project => $projects.paste(project));
+}
+
+if (url.searchParams.has("tab"))
+    state.tab = url.searchParams.get("tab");
+if (url.searchParams.has("data"))
+    state.data = url.searchParams.get("data");
+if (url.searchParams.has("submit"))
+    state.submit = url.searchParams.get("submit") === "1";
+
+window.history.replaceState(state, "", `${window.location.origin}${window.location.pathname}`);
 
 const $submit = $("#input-screen-submit");
 const $cancel = $("#input-screen-cancel");
@@ -94,8 +120,12 @@ new OAuth().then(async function(oauth) {
 
     $submit.classList.remove("disabled");
     $submit.addEventListener("click", () => {
+        const state = window.history.state;
+        state.submit = true;
+        window.history.replaceState(state, "");
+
         $users.disable();
-        $project.disable();
+        $projects.disable();
 
         $submit.classList.add("hidden");
         $cancel.classList.remove("hidden");
@@ -109,14 +139,13 @@ new OAuth().then(async function(oauth) {
         $status.classList.remove("hidden");
         $credits.classList.add("hidden");
 
-        const { close } = getUserData(() => oauth.access(), $users.values(), $project.values(), function callback({ status, data }) {
+        const { close } = GetUserData(() => oauth.access(), $users.values(), $projects.values(), function callback({ status, data }) {
             switch (status) {
                 case "progress": {
                     setProgress(data);
                 } break;
                 case "done": {
-                    const { results, url } = data;
-                    if (data.results.length === 0) {
+                    if (data.length === 0) {
                         $progress.classList.add("error");
                         progressCalback = () => {
                             $status.textContent = "No data returned";
@@ -124,16 +153,10 @@ new OAuth().then(async function(oauth) {
                     } else {
                         $progress.classList.add("success");
                         progressCalback = () => {
-                            history.pushState({ action: "reload" }, "", url);
-                            window.addEventListener("popstate", event => {
-                                if (event.state?.action === "reload") location.reload();
-                            });
-
-                            LoadResults(results);
+                            LoadResults(data);
 
                             $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
-                            if (params.has("tab"))
-                                ChangeTab(params.get("tab"));
+                            if (state.tab) ChangeTab(state.tab);
 
                             if (!$("#tabs > .tab-button.active"))
                                 ChangeTab($("#tabs > .tab-button").dataset.tab);
@@ -151,12 +174,18 @@ new OAuth().then(async function(oauth) {
                     console.error(data);
 
                     $progress.classList.add("error");
-                    $status.textContent = data;
+                    progressCalback = () => {
+                        $status.textContent = String(data);
+                    };
                 } break;
             }
         });
 
         $cancel.onclick = () => {
+            const state = window.history.state;
+            state.submit = false;
+            window.history.replaceState(state, "");
+
             close();
 
             progressCalback = null;
@@ -169,9 +198,9 @@ new OAuth().then(async function(oauth) {
             $credits.classList.remove("hidden");
 
             $users.enable();
-            $project.enable();
+            $projects.enable();
         };
     });
 
-    if (params.get("submit") === "true") $submit.click();
+    if (state.submit) $submit.click();
 }).catch(error => console.error(error));

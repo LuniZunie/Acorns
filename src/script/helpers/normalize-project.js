@@ -1,5 +1,5 @@
 const fixURL = value => value.match(/^.+?:\/\//) ? value : `https://${value}`;
-export const normalizeProject = value => {
+export const NormalizeProject = value => {
     if (!value || value === "*") return value;
 
     try {
