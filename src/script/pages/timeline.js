@@ -173,8 +173,7 @@ export function RenderTimeline(data, requestedDate) {
     function navigateToDate(index, instant = false) {
         if (index < 0 || index >= dates.length) return;
         selectDate(index);
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top -
-            $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
+        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
         const top = firstSectionTop + dates[index].offset;
         if (instant) {
             clearTimeout(scrollSettleTimeout);
@@ -212,8 +211,7 @@ export function RenderTimeline(data, requestedDate) {
 
     function updateDateFromScroll() {
         if ($$dateSections.length === 0) return;
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top -
-            $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
+        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
         const targetOffset = $scrollContainer.scrollTop + 24 - firstSectionTop;
         selectDate(findDateAtOffset(targetOffset));
         updateLoadedDays();
@@ -222,16 +220,19 @@ export function RenderTimeline(data, requestedDate) {
     $scrollContainer.scrollTop = 0;
     $scrollContainer.appendChild($page);
     if (dates.length > 0) {
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top -
-            $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
+        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
         $scrollContainer.scrollTop = firstSectionTop + dates[selectedIndex].offset;
         updateScrollTail();
     }
 
-    if (dates.length === 0) throw new Error("No dates found");
-    else {
+    if (dates.length === 0) {
+        $navigation.hidden = true;
+    } else {
         updateLoadedDays();
         updateNavigation();
+
+        $navigation.hidden = false;
+
         let scrollFrame = 0;
         const scrollController = new AbortController();
         const removalObserver = new MutationObserver(() => {

@@ -93,18 +93,6 @@
     margin: 0 auto;
     border-bottom: 1px solid $border;
 
-    &:has(.tab-button[data-tab="timecards"].active) {
-        --active-tab: 1;
-    }
-
-    &:has(.tab-button[data-tab="calendar"].active) {
-        --active-tab: 2;
-    }
-
-    &:has(.tab-button[data-tab="timeline"].active) {
-        --active-tab: 3;
-    }
-
     &::after {
         position: absolute;
         bottom: -1px;

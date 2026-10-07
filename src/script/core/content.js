@@ -16,9 +16,8 @@ export function LoadResults(results) {
 
     $("#tabs > .tab-button[data-tab='timecards']").classList.toggle("hidden", !hasAnyEdits);
     $("#tabs > .tab-button[data-tab='calendar']").classList.toggle("hidden", !hasAnyEdits);
-    $("#tabs > .tab-button[data-tab='timeline']").classList.toggle("hidden", !hasAnyEdits);
 
-    $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length)
+    $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length);
 }
 export function ChangeTab(tab, circular = false) {
     const state = window.history.state ?? { };
@@ -37,6 +36,7 @@ export function ChangeTab(tab, circular = false) {
 
     $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
     $tab.classList.add("active");
+    $("#tabs").style.setProperty("--active-tab", [ ...$$("#tabs > .tab-button:not(.hidden)") ].findIndex($tab => $tab.classList.contains("active")));
 
     $("#tab-content").innerHTML = "";
     LoadTabContent(tab);
