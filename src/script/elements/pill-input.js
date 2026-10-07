@@ -76,9 +76,12 @@ class PillInput extends HTMLElement {
                 this.#$input.focus();
         });
 
-        this.#$input.addEventListener("input", () => {
+        this.#$input.addEventListener("input", e => {
             if (this.#disabled) return;
-            this.#consume(this.#$input.value);
+            if (e.inputType === "insertFromPaste") {
+                this.#consume(this.#$input.value, true);
+                this.#$input.value = "";
+            } else this.#consume(this.#$input.value, false);
         });
         this.#$input.addEventListener("blur", () => this.#commit());
         this.#$input.addEventListener("keydown", e => {

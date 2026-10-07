@@ -175,8 +175,9 @@ new OAuth().then(async function(oauth) {
 
                     $progress.classList.add("error");
                     progressCalback = () => {
-                        $status.textContent = String(data);
+                        $status.textContent = String(data.message);
                     };
+                    setProgress(1);
                 } break;
             }
         });
