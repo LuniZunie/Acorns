@@ -1,6 +1,10 @@
 const CAT = Uint8Array.from("[[category:", ch => ch.charCodeAt(0));
 const HTTP = Uint8Array.from("http", ch => ch.charCodeAt(0));
-const IMG = ["[[file:", "[[image:", "[[media:"];
+const IMG = [
+    Uint8Array.from("[[file:", ch => ch.charCodeAt(0)),
+    Uint8Array.from("[[image:", ch => ch.charCodeAt(0)),
+    Uint8Array.from("[[media:", ch => ch.charCodeAt(0)),
+];
 
 // Link terminators (ASCII): whitespace + [ ] < > " ' | { }
 const LT = new Uint8Array(128);
@@ -9,6 +13,8 @@ for (const ch of " \t\n\v\f\r[]<>\"'|{}") LT[ch.charCodeAt(0)] = 1;
 // Stop characters for the backwards "name=file.ext" scan
 const STOP = new Uint8Array(128);
 for (const ch of "\n[]{}\\/<>#|:") STOP[ch.charCodeAt(0)] = 1;
+
+const IMG_LEN = [7, 9, 8];
 
 // JS String.prototype.trim() whitespace
 const isWs = c =>
@@ -126,7 +132,8 @@ const ParseWikitext = s => {
                 else ii = lc === 91 ? 2 : 0;
             } else {
                 const w = IMG[iv];
-                if (lc === w.charCodeAt(ii)) { if (++ii === w.length) { ii = 0; im = 1; is = p + 1; } }
+                const ix = ii;
+                if (lc === w[ix]) { if (++ii === IMG_LEN[iv]) { ii = 0; im = 1; is = p + 1; } }
                 else ii = lc === 91 ? 1 : 0;
             }
         } else if (c === 10) im = 0;
