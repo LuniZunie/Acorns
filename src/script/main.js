@@ -55,6 +55,8 @@ window.addEventListener("popstate", e => {
 })
 
 const $submit = $("#input-screen-submit");
+const $actions = $("#input-screen-actions");
+const $retry = $("#input-screen-retry");
 const $cancel = $("#input-screen-cancel");
 
 const $progress = $("#input-screen-progress");
@@ -75,6 +77,11 @@ const layoutProgress = () => {
 new ResizeObserver(layoutProgress).observe($progress.parentElement);
 const $status = $("#input-screen-status");
 const $credits = $("#credits");
+const $loadingScreen = $("#app-loading-screen");
+const $loadingSkeleton = $(".loading-skeleton", $loadingScreen);
+const $loadingMessage = $("#app-loading-message");
+const $loadingError = $("#app-loading-error");
+$("#app-loading-reload").addEventListener("click", () => window.location.reload());
 
 let progressTarget = 0, progressShown = 0, progressFrame = null, progressLast = 0;
 let progressCalback = null;
@@ -86,15 +93,18 @@ const renderProgress = () => {
         $bar.style.strokeDashoffset = dashOffset;
     });
     $status.textContent = `${Math.trunc(progressShown * 100)}%`;
+
+    if (progressShown === 1 && progressCalback)
+        requestAnimationFrame(() => {
+            progressCalback();
+            progressCalback = null;
+        });
 };
 const tickProgress = now => {
     const dt = Math.min((now - progressLast) / 1000, 0.1);
     progressLast = now;
     progressShown += (progressTarget - progressShown) * (1 - Math.exp(-PROGRESS_RATE * dt));
-    if (progressTarget - progressShown < 0.0005) {
-        progressShown = progressTarget;
-        if (progressCalback) requestAnimationFrame(progressCalback);
-    }
+    if (progressTarget - progressShown < 0.0005) progressShown = progressTarget;
     renderProgress();
     progressFrame = progressShown === progressTarget ? null : requestAnimationFrame(tickProgress);
 };
@@ -155,7 +165,8 @@ Promise.all([
         $projects.disable();
 
         $submit.classList.add("hidden");
-        $cancel.classList.remove("hidden");
+        $actions.classList.remove("hidden");
+        $retry.classList.add("hidden");
 
         setProgress(0, true);
 
@@ -166,6 +177,14 @@ Promise.all([
         $status.classList.remove("hidden");
         $credits.classList.add("hidden");
 
+        window.onfocus = () => {
+            if (progressTarget === 1) {
+                $("#input-screen-wrap").style.transition = "none";
+                $("#content").style.transition = "none";
+            }
+            setProgress(progressTarget, true);
+        }
+
         const { close } = GetUserData(() => oauth.access(), $users.values(), $projects.values(), function callback({ status, data }) {
             switch (status) {
                 case "progress": {
@@ -173,6 +192,7 @@ Promise.all([
                 } break;
                 case "done": {
                     if (data.length === 0) {
+                        $retry.classList.remove("hidden");
                         $progress.classList.add("error");
                         progressCalback = () => {
                             $status.textContent = "No data returned";
@@ -180,7 +200,6 @@ Promise.all([
                     } else {
                         $progress.classList.add("success");
                         progressCalback = () => {
-                            console.log(data);
                             LoadResults(data);
 
                             $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
@@ -195,6 +214,11 @@ Promise.all([
 
                             $("#input-screen-wrap").classList.add("hidden");
                             $("#content").classList.remove("hidden");
+
+                            requestAnimationFrame(() => {
+                                $("#input-screen-wrap").style.transition = "";
+                                $("#content").style.transition = "";
+                            });
                         };
                     }
 
@@ -206,6 +230,8 @@ Promise.all([
                     $progress.classList.add("error");
                     progressCalback = () => {
                         $status.textContent = String(data.message);
+
+                        $retry.classList.remove("hidden");
                     };
                     setProgress(1);
                 } break;
@@ -222,7 +248,8 @@ Promise.all([
             progressCalback = null;
 
             $submit.classList.remove("hidden");
-            $cancel.classList.add("hidden");
+            $actions.classList.add("hidden");
+            $retry.classList.add("hidden");
 
             $progress.classList.add("hidden");
             $status.classList.add("hidden");
@@ -231,7 +258,18 @@ Promise.all([
             $users.enable();
             $projects.enable();
         };
+
+        $retry.onclick = () => {
+            $cancel.click();
+            $submit.click();
+        };
     });
 
+    $loadingScreen.classList.add("hidden");
     if (state.submit) $submit.click();
+}).catch(error => {
+    console.error("Failed to initialize Acorns.", error);
+    $loadingSkeleton.hidden = true;
+    $loadingMessage.hidden = true;
+    $loadingError.hidden = false;
 });

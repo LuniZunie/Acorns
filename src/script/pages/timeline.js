@@ -1,8 +1,33 @@
 import { $ } from "../helpers/query-selector.js";
+import { Text } from "../helpers/text.js";
 import { Time } from "../helpers/time.js";
+import {
+    COLOR_SEED_CANDIDATES,
+    GetUserColorSeed,
+    SetUserColorSeed,
+    StateUserColorSeed,
+    UserColor
+} from "../helpers/username-to-color.js";
 
-const dayLength = 24 * 60 * 60 * 1000;
-const longGap = 30 * 60 * 1000;
+const longGap = Time.minutes(30);
+const SCROLL_SETTLE_DELAY = 140;
+const SCROLL_ANCHOR_OFFSET = 24;
+
+const DAY_HEADER_HEIGHT = 2.5;
+const ENTRY_HEIGHT = 3.25;
+const GAP_HEIGHT = 1.1;
+const DATE_GAP_HEIGHT = 2;
+
+const entryKindOrder = new Map([
+    "global-registration",
+    "local-registration",
+    "upload",
+    "edit",
+    "local-block",
+    "global-block",
+    "lock"
+].map((kind, index) => [ kind, index ]));
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
@@ -17,106 +42,221 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
     hourCycle: "h23",
     timeZone: "UTC"
 });
+const numberFormatter = new Intl.NumberFormat();
+
+const hiddenUsers = new Set();
+
+const startOfDay = timestamp => Math.floor(timestamp / Time.days(1)) * Time.days(1);
+const formatDate = timestamp => dateFormatter.format(new Date(timestamp));
+const encodeTitle = title => encodeURIComponent(title.replaceAll(" ", "_"));
+
+function create(tag, className, textContent) {
+    const $element = document.createElement(tag);
+    if (className) $element.className = className;
+    if (textContent !== undefined) $element.textContent = textContent;
+    return $element;
+}
+
+function createLink(className, href, textContent, title) {
+    const $link = create("a", className, textContent);
+    $link.href = href;
+    $link.target = "_blank";
+    $link.rel = "noopener noreferrer";
+    if (title !== undefined) $link.title = title;
+    return $link;
+}
+
+function getContributionsURL(project, username) {
+    const origin = new URL(`https://${project}`).origin;
+    return new URL(`/wiki/Special:Contributions/${encodeTitle(username)}`, origin).href;
+}
+
+function getGlobalContributionsURL(username) {
+    return new URL(`/wiki/Special:GlobalContributions/${encodeTitle(username)}`, "https://meta.wikimedia.org").href;
+}
 
 export function RenderTimeline(data, requestedDate) {
     const dates = createTimelineDates(data);
-    const $page = document.createElement("section");
-    $page.classList.add("edit-timeline-page");
-    $page.setAttribute("aria-label", "Edit timeline");
-
-    const $list = document.createElement("div");
-    $list.classList.add("edit-timeline-days");
-    $list.setAttribute("aria-label", "Edits by date");
-    $page.appendChild($list);
+    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
     const $scrollContainer = $("#tab-content");
 
-    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-    let offset = 0;
-    const $$dateSections = dates.map(({ date, edits }, index) => {
+    const homes = new Map(data.map(user => [ String(user.user), user.home ]));
+    const users = Array.from(homes, ([ name, home ]) => ({
+        name,
+        home,
+        color: UserColor(name),
+        visible: !hiddenUsers.has(name)
+    }));
+    const usersByName = new Map(users.map(user => [ user.name, user ]));
+
+    const $page = create("section", "edit-timeline-page");
+    $page.setAttribute("aria-label", "User activity timeline");
+
+    const $legend = createTimelineLegend(users, ({ name, visible }) => {
+        if (visible) hiddenUsers.delete(name);
+        else hiddenUsers.add(name);
+        updateVisibleEntries();
+    });
+    $legend.querySelector(".edit-timeline-refresh-colors").addEventListener("click", refreshColors);
+    $page.appendChild($legend);
+
+    const $list = create("div", "edit-timeline-days");
+    $list.setAttribute("aria-label", "Activity by date");
+    $page.appendChild($list);
+
+    const $$dateSections = dates.map(({ date }, index) => {
         if (index > 0) {
-            const skippedDays = (date - dates[index - 1].date) / dayLength - 1;
-            if (skippedDays > 0) {
-                const $dateGap = createDateGap(skippedDays);
-                $list.appendChild($dateGap);
-                offset += 2.5 * rem;
-            }
+            const skippedDays = (date - dates[index - 1].date) / Time.days(1) - 1;
+            if (skippedDays > 0) $list.appendChild(createDateGap(skippedDays));
         }
 
-        const $section = document.createElement("section");
-        $section.classList.add("edit-timeline-day");
+        const $section = create("section", "edit-timeline-day");
         $section.dataset.dateIndex = String(index);
-        $section.setAttribute("aria-label", dateFormatter.format(new Date(date)));
-
-        const gapCount = countLongGaps(edits);
-        const height = (3 + edits.length * 4 + gapCount * 2) * rem + 1;
-        dates[index].offset = offset;
-        dates[index].height = height;
-        offset += height;
-        $section.style.height = `${height}px`;
+        $section.setAttribute("aria-label", formatDate(date));
         $list.appendChild($section);
         return $section;
     });
+    updateDateLayout();
 
-    const $scrollTail = document.createElement("div");
-    $scrollTail.classList.add("edit-timeline-scroll-tail");
+    const $scrollTail = create("div", "edit-timeline-scroll-tail");
     $scrollTail.setAttribute("aria-hidden", "true");
     $list.appendChild($scrollTail);
 
-    const $navigation = document.createElement("nav");
-    $navigation.classList.add("edit-timeline-navigation");
+    const $navigation = create("nav", "edit-timeline-navigation");
     $navigation.setAttribute("aria-label", "Choose a date");
+    $navigation.hidden = dates.length === 0;
     $page.appendChild($navigation);
 
     const $$dateButtons = new Map();
     const loadedDays = new Set();
-    let selectedIndex = getInitialDateIndex(dates, requestedDate ?? self.rememberedDate);
+    let selectedIndex = Math.max(0, findDateIndex(dates, requestedDate ?? self.rememberedDate));
     let scrollSettleTimeout = 0;
     let programmaticScrollTarget = null;
 
+    $page.goToDate = (date, { instant = false } = { }) => {
+        const index = findDateIndex(dates, date);
+        if (index < 0) return false;
+        navigateToDate(index, instant);
+        return true;
+    };
+
+    $scrollContainer.scrollTop = 0;
+    $scrollContainer.appendChild($page);
+
+    if (dates.length === 0) {
+        const $empty = create("p", "edit-timeline-empty", "No activity to display for these users and projects.");
+        $empty.setAttribute("role", "status");
+        $list.appendChild($empty);
+    } else {
+        saveSelectedDate();
+        $scrollContainer.scrollTop = getFirstSectionTop() + dates[selectedIndex].offset;
+        updateScrollTail();
+        updateLoadedDays();
+        updateNavigation();
+        attachListeners();
+    }
+
+    function refreshColors() {
+        SetUserColorSeed(pickColorSeed(users));
+        StateUserColorSeed();
+
+        for (const user of users) user.color = UserColor(user.name);
+        for (const $swatch of $legend.querySelectorAll(".edit-timeline-swatch"))
+            $swatch.style.setProperty("--user-color", usersByName.get($swatch.dataset.username).color);
+        for (const $entry of $page.querySelectorAll(".edit-timeline-entry"))
+            $entry.style.setProperty("--user-color", UserColor($entry.dataset.username));
+
+        const $icon = $legend.querySelector(".edit-timeline-refresh-icon");
+        $icon.classList.remove("rotating");
+        void $icon.offsetWidth;
+        $icon.classList.add("rotating");
+    }
+
+    function getVisibleEntries(index) {
+        return dates[index].entries.filter(entry => !hiddenUsers.has(entry.username));
+    }
+
+    function getFirstSectionTop() {
+        return $$dateSections[0].getBoundingClientRect().top
+            - $scrollContainer.getBoundingClientRect().top
+            + $scrollContainer.scrollTop;
+    }
+
+    function updateDateLayout() {
+        let offset = 0;
+        dates.forEach((day, index) => {
+            if (index > 0 && day.date - dates[index - 1].date > Time.days(1))
+                offset += DATE_GAP_HEIGHT * rem;
+
+            const entries = getVisibleEntries(index);
+            const height = (
+                DAY_HEADER_HEIGHT +
+                entries.length * ENTRY_HEIGHT +
+                countLongGaps(entries) * GAP_HEIGHT
+            ) * rem + 1;
+
+            day.offset = offset;
+            day.height = height;
+            $$dateSections[index].style.height = `${height}px`;
+            offset += height;
+        });
+    }
+
+    function updateScrollTail() {
+        const lastDateHeight = dates.at(-1)?.height ?? 0;
+        $scrollTail.style.height = `${Math.max(0, $scrollContainer.clientHeight - lastDateHeight)}px`;
+    }
+
+    function updateVisibleEntries() {
+        if (dates.length === 0) return;
+
+        const firstSectionTop = getFirstSectionTop();
+        const offsetWithinDate = $scrollContainer.scrollTop - firstSectionTop - dates[selectedIndex].offset;
+
+        updateDateLayout();
+        for (const index of loadedDays) renderDay(index);
+
+        const clamped = Math.min(Math.max(0, offsetWithinDate), dates[selectedIndex].height - 1);
+        $scrollContainer.scrollTop = firstSectionTop + dates[selectedIndex].offset + clamped;
+        updateScrollTail();
+        updateLoadedDays();
+    }
+
     function renderDay(index) {
         const $section = $$dateSections[index];
-        const { date, edits } = dates[index];
-        $section.replaceChildren();
-
-        const $heading = document.createElement("h2");
-        $heading.classList.add("edit-timeline-date");
-        $heading.textContent = dateFormatter.format(new Date(date));
-        $section.appendChild($heading);
+        $section.replaceChildren(create("h2", "edit-timeline-date", formatDate(dates[index].date)));
 
         let previousTimestamp;
-        for (const entry of edits) {
+        for (const entry of getVisibleEntries(index)) {
             if (previousTimestamp !== undefined && entry.timestamp - previousTimestamp > longGap)
                 $section.appendChild(createGap(entry.timestamp - previousTimestamp));
-            $section.appendChild(createEdit(entry));
+            $section.appendChild(createEntry(entry));
             previousTimestamp = entry.timestamp;
         }
     }
 
+    function addIndexRange(set, from, to) {
+        for (let index = Math.max(0, from); index <= Math.min(dates.length - 1, to); index++)
+            set.add(index);
+    }
+
     function updateLoadedDays() {
-        const nextLoadedDays = new Set();
-        for (let index = Math.max(0, selectedIndex - 2); index <= Math.min(dates.length - 1, selectedIndex + 2); index++)
-            nextLoadedDays.add(index);
+        const next = new Set();
+        addIndexRange(next, selectedIndex - 2, selectedIndex + 2);
 
         if (dates.length > 0 && $page.isConnected) {
-            const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
-            const viewportStart = Math.max(0, $scrollContainer.scrollTop - firstSectionTop);
+            const viewportStart = Math.max(0, $scrollContainer.scrollTop - getFirstSectionTop());
             const viewportEnd = viewportStart + $scrollContainer.clientHeight;
-            const firstVisible = findDateAtOffset(viewportStart);
-            const lastVisible = findDateAtOffset(viewportEnd);
-            for (let index = Math.max(0, firstVisible - 1); index <= Math.min(dates.length - 1, lastVisible + 1); index++)
-                nextLoadedDays.add(index);
+            addIndexRange(next, findDateAtOffset(viewportStart) - 1, findDateAtOffset(viewportEnd) + 1);
         }
 
-        for (const index of nextLoadedDays)
-            if (!loadedDays.has(index))
-                renderDay(index);
-
+        for (const index of next)
+            if (!loadedDays.has(index)) renderDay(index);
         for (const index of loadedDays)
-            if (!nextLoadedDays.has(index))
-                $$dateSections[index].replaceChildren();
+            if (!next.has(index)) $$dateSections[index].replaceChildren();
 
         loadedDays.clear();
-        for (const index of nextLoadedDays) loadedDays.add(index);
+        for (const index of next) loadedDays.add(index);
     }
 
     function findDateAtOffset(offset) {
@@ -124,38 +264,34 @@ export function RenderTimeline(data, requestedDate) {
         let high = dates.length - 1;
         while (low < high) {
             const middle = Math.floor((low + high) / 2);
-            if (dates[middle].offset + dates[middle].height <= offset)
-                low = middle + 1;
+            if (dates[middle].offset + dates[middle].height <= offset) low = middle + 1;
             else high = middle;
         }
         return low;
     }
 
     function updateNavigation() {
-        const first = Math.max(0, selectedIndex - 2);
-        const last = Math.min(dates.length - 1, selectedIndex + 2);
         const visible = new Set();
+        addIndexRange(visible, selectedIndex - 2, selectedIndex + 2);
 
-        for (let index = first; index <= last; index++) {
-            visible.add(index);
+        for (const index of visible) {
             let $button = $$dateButtons.get(index);
             if (!$button) {
-                $button = document.createElement("button");
+                $button = create("button");
                 $button.type = "button";
-                $button.classList.add("edit-timeline-date-button");
                 $button.addEventListener("click", () => navigateToDate(index));
                 $$dateButtons.set(index, $button);
             }
 
-            const position = index - selectedIndex;
-            $button.className = `edit-timeline-date-button position-${position + 2}`;
-            $button.textContent = dateFormatter.format(new Date(dates[index].date));
+            const label = formatDate(dates[index].date);
+            $button.className = `edit-timeline-date-button position-${index - selectedIndex + 2}`;
+            $button.textContent = label;
             $button.setAttribute("aria-current", index === selectedIndex ? "date" : "false");
-            $button.setAttribute("aria-label", `Show ${dateFormatter.format(new Date(dates[index].date))}`);
-            $navigation.appendChild($button);
+            $button.setAttribute("aria-label", `Show ${label}`);
+            $navigation.appendChild($button); // re-appending keeps the buttons in order
         }
 
-        for (const [index, $button] of $$dateButtons) {
+        for (const [ index, $button ] of $$dateButtons) {
             if (visible.has(index)) continue;
             $button.remove();
             $$dateButtons.delete(index);
@@ -173,8 +309,8 @@ export function RenderTimeline(data, requestedDate) {
     function navigateToDate(index, instant = false) {
         if (index < 0 || index >= dates.length) return;
         selectDate(index);
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
-        const top = firstSectionTop + dates[index].offset;
+
+        const top = getFirstSectionTop() + dates[index].offset;
         if (instant) {
             clearTimeout(scrollSettleTimeout);
             programmaticScrollTarget = null;
@@ -186,7 +322,7 @@ export function RenderTimeline(data, requestedDate) {
         programmaticScrollTarget = index;
         $scrollContainer.scrollTo({
             top,
-            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
         });
         scheduleScrollSettle();
     }
@@ -196,257 +332,333 @@ export function RenderTimeline(data, requestedDate) {
         scrollSettleTimeout = setTimeout(() => {
             programmaticScrollTarget = null;
             if ($page.isConnected) updateDateFromScroll();
-        }, 140);
+        }, SCROLL_SETTLE_DELAY);
     }
-
-    function goToDate(date, { instant = false } = {}) {
-        const index = findDateIndex(dates, date);
-        if (index < 0) return false;
-        navigateToDate(index, instant);
-        return true;
-    }
-
-    $page.goToDate = goToDate;
-    if (dates.length > 0) saveSelectedDate();
 
     function updateDateFromScroll() {
-        if ($$dateSections.length === 0) return;
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
-        const targetOffset = $scrollContainer.scrollTop + 24 - firstSectionTop;
-        selectDate(findDateAtOffset(targetOffset));
+        const offset = $scrollContainer.scrollTop + SCROLL_ANCHOR_OFFSET - getFirstSectionTop();
+        selectDate(findDateAtOffset(offset));
         updateLoadedDays();
     }
 
-    $scrollContainer.scrollTop = 0;
-    $scrollContainer.appendChild($page);
-    if (dates.length > 0) {
-        const firstSectionTop = $$dateSections[0].getBoundingClientRect().top - $scrollContainer.getBoundingClientRect().top + $scrollContainer.scrollTop;
-        $scrollContainer.scrollTop = firstSectionTop + dates[selectedIndex].offset;
-        updateScrollTail();
+    function saveSelectedDate() {
+        self.rememberedDate = new Date(dates[selectedIndex].date).toISOString().slice(0, 10);
+        const state = window.history.state ?? { };
+        state.data = self.rememberedDate;
+        window.history.replaceState(state, "");
     }
 
-    if (dates.length === 0) {
-        $navigation.hidden = true;
-    } else {
-        updateLoadedDays();
-        updateNavigation();
-
-        $navigation.hidden = false;
-
+    function attachListeners() {
         let scrollFrame = 0;
-        const scrollController = new AbortController();
+        const controller = new AbortController();
+        const { signal } = controller;
+
         const removalObserver = new MutationObserver(() => {
             if ($page.isConnected) return;
-            scrollController.abort();
+            controller.abort();
             if (scrollFrame) cancelAnimationFrame(scrollFrame);
             clearTimeout(scrollSettleTimeout);
             removalObserver.disconnect();
         });
         removalObserver.observe($scrollContainer, { childList: true });
+
         $scrollContainer.addEventListener("scroll", () => {
             if (scrollFrame) return;
             scrollFrame = requestAnimationFrame(() => {
                 scrollFrame = 0;
                 if (!$page.isConnected) return;
+
                 updateLoadedDays();
-                if (programmaticScrollTarget !== null) {
-                    scheduleScrollSettle();
-                    return;
-                }
-                updateDateFromScroll();
+                if (programmaticScrollTarget !== null) scheduleScrollSettle();
+                else updateDateFromScroll();
             });
-        }, { passive: true, signal: scrollController.signal });
+        }, { passive: true, signal });
+
         window.addEventListener("resize", () => {
             updateScrollTail();
             updateLoadedDays();
-        }, { passive: true, signal: scrollController.signal });
+        }, { passive: true, signal });
 
         $navigation.addEventListener("wheel", event => {
             if (event.deltaY === 0) return;
             event.preventDefault();
-            if (programmaticScrollTarget !== null) return;
-            navigateToDate(selectedIndex + Math.sign(event.deltaY));
+            if (programmaticScrollTarget === null)
+                navigateToDate(selectedIndex + Math.sign(event.deltaY));
         }, { passive: false });
+
         $navigation.addEventListener("keydown", event => {
             if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
             event.preventDefault();
             navigateToDate(selectedIndex + (event.key === "ArrowDown" ? 1 : -1));
         });
     }
-
-    function saveSelectedDate() {
-        const date = dates[selectedIndex].date;
-        self.rememberedDate = new Date(date).toISOString().slice(0, 10);
-        const state = window.history.state ?? { };
-        state.data = self.rememberedDate;
-        window.history.replaceState(state, "");
-    }
-
-    function updateScrollTail() {
-        const lastDateHeight = dates.at(-1)?.height ?? 0;
-        $scrollTail.style.height = `${Math.max(0, $scrollContainer.clientHeight - lastDateHeight)}px`;
-    }
-}
-
-function getInitialDateIndex(dates, requestedDate) {
-    if (dates.length === 0) return 0;
-    if (requestedDate !== undefined) {
-        const index = findDateIndex(dates, requestedDate);
-        if (index >= 0) return index;
-    }
-    return 0;
 }
 
 function findDateIndex(dates, date) {
-    const timestamp = date instanceof Date ? date.getTime() : new Date(date).getTime();
+    const timestamp = new Date(date).getTime();
     if (!Number.isFinite(timestamp)) return -1;
-    const targetDate = Math.floor(timestamp / dayLength) * dayLength;
-    return dates.findIndex(entry => entry.date === targetDate);
+
+    const day = startOfDay(timestamp);
+    return dates.findIndex(entry => entry.date === day);
+}
+
+function updateSwatch($swatch, user) {
+    const label = `${user.visible ? "Hide" : "Show"} ${user.name}`;
+    $swatch.classList.toggle("is-hidden", !user.visible);
+    $swatch.setAttribute("aria-pressed", String(user.visible));
+    $swatch.setAttribute("aria-label", label);
+    $swatch.title = label;
+}
+
+function createTimelineLegend(users, onToggle) {
+    const $legend = create("aside", "edit-timeline-legend");
+    $legend.setAttribute("aria-label", "Filter accounts");
+    $legend.hidden = users.length === 0;
+
+    const $list = create("ul", "edit-timeline-legend-list");
+    $legend.append(create("h2", "edit-timeline-legend-title", "Accounts"), $list);
+
+    for (const user of users) {
+        const $swatch = create("button", "edit-timeline-swatch");
+        $swatch.type = "button";
+        $swatch.style.setProperty("--user-color", user.color);
+        $swatch.dataset.username = user.name;
+        updateSwatch($swatch, user);
+        $swatch.addEventListener("click", () => {
+            user.visible = !user.visible;
+            updateSwatch($swatch, user);
+            onToggle(user);
+        });
+
+        const $username = createLink(
+            "edit-timeline-legend-username",
+            user.home ? getContributionsURL(user.home, user.name) : getGlobalContributionsURL(user.name),
+            user.name,
+            user.home
+                ? `View ${user.name}'s contributions on their home wiki`
+                : `View ${user.name}'s global contributions`
+        );
+
+        const $item = create("li", "edit-timeline-legend-item");
+        $item.append($swatch, $username);
+        $list.appendChild($item);
+    }
+
+    const $icon = create("span", "edit-timeline-refresh-icon", "\u21bb");
+    $icon.setAttribute("aria-hidden", "true");
+
+    const $refresh = create("button", "edit-timeline-refresh-colors");
+    $refresh.type = "button";
+    $refresh.setAttribute("aria-label", "New colors");
+    $refresh.append($icon, document.createTextNode("New colors"));
+    $legend.appendChild($refresh);
+
+    return $legend;
+}
+
+function getPaletteDistance(users, seed) {
+    const hues = users.map(user => {
+        const match = UserColor(user.name, seed).match(/^hsl\((\d+)/);
+        if (!match) throw new Error(`Could not read generated color for "${user.name}".`);
+        return Number(match[1]);
+    });
+
+    let minimumDistance = Infinity;
+    for (let i = 0; i < hues.length; i++)
+        for (let j = i + 1; j < hues.length; j++) {
+            const difference = Math.abs(hues[i] - hues[j]);
+            minimumDistance = Math.min(minimumDistance, difference, 360 - difference);
+        }
+
+    return minimumDistance;
+}
+
+function pickColorSeed(users) {
+    const currentSeed = GetUserColorSeed();
+    const candidates = new Set();
+    while (candidates.size < COLOR_SEED_CANDIDATES) {
+        const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+        if (seed !== currentSeed) candidates.add(seed);
+    }
+
+    let best;
+    let greatestDistance = -Infinity;
+    for (const candidate of candidates) {
+        const distance = getPaletteDistance(users, candidate);
+        if (distance > greatestDistance) {
+            best = candidate;
+            greatestDistance = distance;
+        }
+    }
+    return best;
+}
+
+const getBlockLabel = (unblock, reblock, scope) => `${scope} ${unblock ? "unblock" : reblock ? "reblock" : "block"}`;
+
+function getLockLabel({ params }) {
+    if (params?.added?.includes("locked") || params?.["0"] === "locked") return "Lock";
+    if (params?.removed?.includes("locked") || params?.["1"] === "locked") return "Unlock";
+    return "Lock status change";
 }
 
 function createTimelineDates(data) {
-    const editsByDate = new Map();
-    for (const user of data)
-        for (const project of user.projects)
-            for (const edit of project.edits) {
-                const timestamp = new Date(edit.timestamp).getTime();
-                if (!Number.isFinite(timestamp)) continue;
+    const entriesByDate = new Map();
 
-                const date = Math.floor(timestamp / dayLength) * dayLength;
-                let edits = editsByDate.get(date);
-                if (!edits) editsByDate.set(date, edits = []);
-                edits.push({
-                    username: String(user.user),
-                    project: project.project,
-                    title: edit.title,
-                    revid: edit.revid,
-                    parentid: edit.parentid,
-                    timestamp,
-                    timestampText: edit.timestamp
+    const addEntry = (username, project, entry) => {
+        const timestamp = new Date(entry.timestamp).getTime();
+        if (!Number.isFinite(timestamp)) return;
+
+        const date = startOfDay(timestamp);
+        if (!entriesByDate.has(date)) entriesByDate.set(date, [ ]);
+        entriesByDate.get(date).push({
+            ...entry,
+            username,
+            project,
+            timestamp,
+            timestampText: entry.timestamp
+        });
+    };
+
+    const META = "meta.wikimedia.org";
+
+    for (const user of data) {
+        const username = String(user.user);
+
+        if (user.registration?.timestamp)
+            addEntry(username, META, {
+                timestamp: user.registration.timestamp,
+                kind: "global-registration",
+                label: "Global registration",
+                title: `User:${username}`
+            });
+
+        for (const project of user.projects || [ ]) {
+            if (project.registration?.timestamp)
+                addEntry(username, project.project, {
+                    timestamp: project.registration.timestamp,
+                    kind: "local-registration",
+                    label: "Local registration",
+                    title: `User:${username}`
                 });
-            }
+            for (const edit of project.edits || [ ])
+                addEntry(username, project.project, { ...edit, kind: "edit" });
+            for (const block of project.blocks || [ ])
+                addEntry(username, project.project, {
+                    ...block,
+                    kind: "local-block",
+                    label: getBlockLabel(block.unblock, block.reblock, "Local")
+                });
+        }
 
-    if (editsByDate.size === 0) return [];
-
-    const dates = [];
-    const activeDates = Array.from(editsByDate.keys()).sort((a, b) => a - b);
-    for (const date of activeDates) {
-        const edits = editsByDate.get(date);
-        edits.sort((a, b) =>
-            a.timestamp - b.timestamp ||
-            a.username.localeCompare(b.username) ||
-            String(a.revid).localeCompare(String(b.revid))
-        );
-        dates.push({ date, edits });
+        for (const block of user.blocks || [ ])
+            addEntry(username, META, {
+                ...block,
+                kind: "global-block",
+                label: getBlockLabel(block.unblock, block.reblock, "Global")
+            });
+        for (const lock of user.locks || [ ])
+            addEntry(username, META, { ...lock, kind: "lock", label: getLockLabel(lock) });
+        for (const upload of user.uploads || [ ])
+            addEntry(username, "commons.wikimedia.org", { ...upload, kind: "upload", label: "File upload" });
     }
 
-    return dates;
+    const entryId = entry => String(entry.revid ?? entry.logid ?? "");
+
+    return Array.from(entriesByDate)
+        .sort(([ a ], [ b ]) => a - b)
+        .map(([ date, entries ]) => ({
+            date,
+            entries: entries.sort((a, b) =>
+                a.timestamp - b.timestamp ||
+                entryKindOrder.get(a.kind) - entryKindOrder.get(b.kind) ||
+                a.username.localeCompare(b.username) ||
+                entryId(a).localeCompare(entryId(b))
+            )
+        }));
 }
 
-function countLongGaps(edits) {
+function countLongGaps(entries) {
     let gaps = 0;
-    for (let index = 1; index < edits.length; index++)
-        if (edits[index].timestamp - edits[index - 1].timestamp > longGap)
-            gaps++;
+    for (let index = 1; index < entries.length; index++)
+        if (entries[index].timestamp - entries[index - 1].timestamp > longGap) gaps++;
     return gaps;
 }
 
-function createEdit(entry) {
-    const $article = document.createElement("article");
-    $article.classList.add("edit-timeline-entry");
-
+function createEntry(entry) {
     const origin = new URL(`https://${entry.project}`).origin;
-    const $meta = document.createElement("div");
-    $meta.classList.add("edit-timeline-meta");
 
-    const $timestampLink = document.createElement("a");
-    $timestampLink.classList.add("edit-timeline-timestamp");
-    const diffURL = new URL("/w/index.php", origin);
-    diffURL.searchParams.set("diff", entry.revid);
-    diffURL.searchParams.set("oldid", entry.parentid);
-    $timestampLink.href = diffURL.href;
-    $timestampLink.target = "_blank";
-    $timestampLink.rel = "noopener noreferrer";
-    $timestampLink.title = entry.timestampText;
+    const $article = create("article", `edit-timeline-entry edit-timeline-entry--${entry.kind}`);
+    $article.dataset.username = entry.username;
+    $article.style.setProperty("--user-color", UserColor(entry.username));
 
-    const $time = document.createElement("time");
+    const $time = create("time");
     $time.dateTime = entry.timestampText;
     $time.textContent = `${timeFormatter.format(new Date(entry.timestamp))} UTC`;
-    $timestampLink.appendChild($time);
-    $meta.appendChild($timestampLink);
 
-    const $username = document.createElement("a");
-    $username.classList.add("edit-timeline-username");
-    $username.href = new URL(`/wiki/User:${encodeURIComponent(entry.username.replaceAll(" ", "_"))}`, origin).href;
-    $username.target = "_blank";
-    $username.rel = "noopener noreferrer";
-    $username.textContent = entry.username;
-    $meta.appendChild($username);
-    $article.appendChild($meta);
+    let $timestamp;
+    if (entry.kind === "edit") {
+        const diffURL = new URL("/w/index.php", origin);
+        diffURL.searchParams.set("diff", entry.revid);
+        diffURL.searchParams.set("oldid", entry.parentid);
+        $timestamp = createLink("edit-timeline-timestamp", diffURL.href, undefined, entry.timestampText);
+    } else if (entry.logid !== undefined) {
+        const logURL = new URL("/w/index.php", origin);
+        logURL.searchParams.set("title", "Special:Log");
+        logURL.searchParams.set("logid", entry.logid);
+        $timestamp = createLink("edit-timeline-timestamp", logURL.href, undefined, `View ${entry.label.toLowerCase()} log entry`);
+    } else {
+        $timestamp = create("span", "edit-timeline-timestamp");
+        $timestamp.title = entry.timestampText;
+    }
+    $timestamp.appendChild($time);
 
-    const $projectLink = document.createElement("a");
-    $projectLink.classList.add("edit-timeline-project");
-    $projectLink.href = origin;
-    $projectLink.target = "_blank";
-    $projectLink.rel = "noopener noreferrer";
-    $projectLink.textContent = entry.project;
+    const $meta = create("div", "edit-timeline-meta");
+    $meta.append(
+        $timestamp,
+        createLink("edit-timeline-username", getContributionsURL(entry.project, entry.username), entry.username)
+    );
 
-    const $pageLink = document.createElement("a");
-    $pageLink.classList.add("edit-timeline-title");
-    $pageLink.href = new URL(`/wiki/${encodeURIComponent(entry.title.replaceAll(" ", "_"))}`, origin).href;
-    $pageLink.target = "_blank";
-    $pageLink.rel = "noopener noreferrer";
-    $pageLink.title = entry.title;
-    $pageLink.textContent = entry.title;
-
-    const $separator = document.createElement("span");
-    $separator.classList.add("edit-timeline-project-separator");
+    const title = entry.title || entry.label || "Activity";
+    const $separator = create("span", "edit-timeline-project-separator");
     $separator.setAttribute("aria-hidden", "true");
 
-    const $pageDetails = document.createElement("div");
-    $pageDetails.classList.add("edit-timeline-page-links");
-    $pageDetails.append($projectLink, $separator, $pageLink);
-    $article.appendChild($pageDetails);
+    const $pageDetails = create("div", "edit-timeline-page-links");
+    $pageDetails.append(
+        create("span", "edit-timeline-kind", entry.label || "Edit"),
+        createLink("edit-timeline-project", origin, entry.project),
+        $separator,
+        createLink("edit-timeline-title", new URL(`/wiki/${encodeTitle(title)}`, origin).href, title, title)
+    );
+
+    $article.append($meta, $pageDetails);
     return $article;
 }
 
 function createGap(duration) {
-    const $gap = document.createElement("div");
-    $gap.classList.add("edit-timeline-gap");
+    const $gap = create("div", "edit-timeline-gap");
     $gap.setAttribute("aria-label", `${formatDuration(duration)} between edits`);
-
-    const $label = document.createElement("span");
-    $label.textContent = formatDuration(duration);
-    $gap.appendChild($label);
-
+    $gap.appendChild(create("span", undefined, formatDuration(duration)));
     return $gap;
 }
 
 function createDateGap(skippedDays) {
-    const $gap = document.createElement("div");
-    $gap.classList.add("edit-timeline-date-gap");
-    $gap.setAttribute("aria-label", `${skippedDays} ${skippedDays === 1 ? "day" : "days"} without edits`);
+    const unit = Text.pluralize("day", skippedDays);
 
-    const $label = document.createElement("span");
-    $label.textContent = `${skippedDays} ${skippedDays === 1 ? "day" : "days"} skipped`;
-    $gap.appendChild($label);
-
+    const $gap = create("div", "edit-timeline-date-gap");
+    $gap.setAttribute("aria-label", `${skippedDays} ${unit} without edits`);
+    $gap.appendChild(create("span", undefined, `${numberFormatter.format(skippedDays)} ${unit} skipped`));
     return $gap;
 }
 
 function formatDuration(duration) {
-    let minutes = Math.floor(duration / Time.minutes(1));
+    const totalMinutes = Math.floor(duration / Time.minutes(1));
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
 
-    const days = Math.floor(minutes / (24 * 60));
-    minutes %= 24 * 60;
-
-    const hours = Math.floor(minutes / 60);
-    minutes %= 60;
-
-    const parts = [];
+    const parts = [ ];
     if (days) parts.push(`${days}d`);
     if (hours) parts.push(`${hours}h`);
     if (minutes || parts.length === 0) parts.push(`${minutes}m`);
-
     return parts.join(" ");
 }

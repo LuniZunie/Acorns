@@ -10,6 +10,12 @@ const RATE_LIMIT_NORMAL = Time.minutes(1) / (2000 * .95);
 const RATE_LIMIT_EXEMPT = 1;
 const EDIT_BATCH = 50;
 const MAX_USER_CONTRIBUTIONS_PER_REQUEST = 500;
+const MAX_RATE_LIMIT_RETRIES = 5;
+const INITIAL_RATE_LIMIT_BACKOFF = 1000;
+const MAX_RATE_LIMIT_BACKOFF = 60000;
+const API_USER_AGENT = "Acorns-Client/1.0 (https://github.com/LuniZunie/Acorns)";
+
+const PRIORITY = { normal: 0, contribs: 1, login: 2 };
 
 const getExpectedEditRequests = editCount => {
     if (!Number.isFinite(editCount) || editCount <= 0) return 0;
@@ -17,12 +23,14 @@ const getExpectedEditRequests = editCount => {
         Math.ceil(editCount / EDIT_BATCH) * 2;
 };
 
+const sleep = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+
 const waitUntil = async time => { // makes sure we never undershoot the wait even slightly
-    let wait = 0;
-    do {
-        if (wait > 0) await new Promise(resolve => { setTimeout(resolve, wait); });
+    let wait = time - performance.now();
+    while (wait > 0) {
+        await sleep(wait);
         wait = time - performance.now();
-    } while (wait > 0);
+    }
 };
 
 const revisionContent = rev => rev.slots?.main?.content ?? rev.content;
@@ -30,66 +38,255 @@ const revisionContent = rev => rev.slots?.main?.content ?? rev.content;
 const scheduler = {
     rateLimit: RATE_LIMIT_NORMAL,
     last: -Infinity,
+    rateLimitedUntil: 0,
     queue: [ ],
     running: false,
     ongoing: new Set(),
+
+    deferUntil(time) {
+        this.rateLimitedUntil = Math.max(this.rateLimitedUntil, time);
+    },
 
     enqueue(items) {
         AddArrayToArray(this.queue, items);
         if (!this.running) this.run();
     },
 
+    // Removes and returns the highest priority item; first-queued wins ties. 
+    takeNext() {
+        let best = 0;
+        for (let i = 1; i < this.queue.length; i++)
+            if (this.queue[i].priority > this.queue[best].priority) best = i;
+        return this.queue.splice(best, 1)[0];
+    },
+
+    async waitForSlot() {
+        do await waitUntil(Math.max(this.last + this.rateLimit, this.rateLimitedUntil));
+        while (performance.now() < this.rateLimitedUntil); // may have been pushed back while waiting
+    },
+
     async run() {
         this.running = true;
         try {
-            while (true) {
+            do {
                 while (this.queue.length > 0) {
-                    // highest priority first; first-queued wins ties
-                    let best = 0;
-                    const length = this.queue.length;
-                    if (length < 1e4) // only perform the full search for smaller queues, clears up performance for very large queues
-                        for (let i = 1; i < length; i++)
-                            if (this.queue[i].priority > this.queue[best].priority) best = i;
-
-                    const [ item ] = this.queue.splice(best, 1);
+                    const item = this.takeNext();
                     if (item.cancelled()) {
                         item.settle();
                         continue;
                     }
 
-                    await waitUntil(this.last + this.rateLimit);
+                    await this.waitForSlot();
                     this.last = performance.now();
 
                     const promise = item.run().finally(() => { this.ongoing.delete(promise); });
                     this.ongoing.add(promise);
                 }
 
-                await Promise.all(Array.from(this.ongoing));
-                if (this.queue.length === 0) break; // handlers may have queued follow-up requests
-            }
+                await Promise.all(this.ongoing);
+            } while (this.queue.length > 0); // handlers may have queued follow-up requests
         } finally {
             this.running = false;
         }
     }
 };
 
-const mwFetch = async (getToken, project, params, retry = true) => {
-    const token = await getToken();
-    const response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
-        method: "POST",
-        headers: {
-            "Api-User-Agent": "Acorns-Client/1.0 (https://github.com/LuniZunie/Acorns)",
-            "Authorization": `Bearer ${token.access}`
-        },
-        body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
-    });
+const getRetryAfterDelay = (response, retryCount) => {
+    const retryAfter = response.headers.get("Retry-After")?.trim();
+    if (retryAfter) {
+        const seconds = Number(retryAfter);
+        if (Number.isFinite(seconds) && seconds >= 0)
+            return seconds * 1000;
 
-    if (response.status === 401 && retry) return mwFetch(getToken, project, params, false);
-    if (!response.ok) throw new Error(`HTTP ${response.status} error${response.statusText ? `: ${response.statusText}` : "."}`);
+        const retryAt = Date.parse(retryAfter);
+        if (Number.isFinite(retryAt))
+            return Math.max(0, retryAt - Date.now());
+    }
 
-    const json = await response.json();
-    if (json.error) throw new Error(`API error (${json.error.code}): ${json.error.info}`);
-    return json;
+    return Math.min(INITIAL_RATE_LIMIT_BACKOFF * 2 ** retryCount, MAX_RATE_LIMIT_BACKOFF);
+};
+
+async function mwFetch(getToken, project, params) {
+    let retryUnauthorized = true;
+    let rateLimitRetries = 0;
+
+    while (true) {
+        const token = await getToken();
+        const response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
+            method: "POST",
+            headers: {
+                "Api-User-Agent": API_USER_AGENT,
+                "Authorization": `Bearer ${token.access}`
+            },
+            body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
+        });
+
+        if (response.status === 401 && retryUnauthorized) {
+            retryUnauthorized = false; // the token getter may hand out a fresh token
+            continue;
+        }
+
+        if (response.status === 429 && rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
+            const retryAt = performance.now() + getRetryAfterDelay(response, rateLimitRetries++);
+            scheduler.deferUntil(retryAt);
+            await waitUntil(retryAt);
+            continue;
+        }
+
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status} error${response.statusText ? `: ${response.statusText}` : "."}`);
+
+        const json = await response.json();
+        if (json.error) throw new Error(`API error (${json.error.code}): ${json.error.info}`);
+        return json;
+    }
+}
+
+async function loadSitematrix() {
+    const sitematrix = await fetch(`${self.location.origin}/sitematrix`).then(res => res.json());
+
+    const codeByHost = new Map();
+    const hostByCode = new Map();
+    for (const [ host, code ] of Object.entries(sitematrix)) {
+        codeByHost.set(host, code);
+        hostByCode.set(code, host);
+    }
+
+    return { codeByHost, hostByCode };
+}
+
+function resolveProjects(projectRules, { codeByHost, hostByCode }) {
+    const resolveCode = name => hostByCode.has(name) ? name : codeByHost.get(name);
+
+    let all = false;
+    const include = new Set();
+    const exclude = new Set();
+
+    for (const rule of projectRules) {
+        const normalized = rule.toLowerCase();
+
+        if (normalized === "*") {
+            all = true;
+            include.clear();
+            exclude.clear();
+            continue;
+        }
+
+        const negate = normalized.startsWith("!");
+        const code = resolveCode(negate ? normalized.slice(1) : normalized);
+        if (!code) continue;
+
+        // With "*" active we track exclusions, otherwise inclusions.
+        const target = all ? exclude : include;
+        if (negate === all) target.add(code);
+        else target.delete(code);
+    }
+
+    const toHosts = codes => new Set(Array.from(codes, code => hostByCode.get(code)));
+
+    return {
+        history: [
+            ...(all ? [ "*" ] : [ ]),
+            ...include,
+            ...Array.from(exclude, code => `!${code}`)
+        ],
+        all,
+        include: toHosts(include),
+        exclude: toHosts(exclude)
+    };
+}
+
+const eventBase = le => ({
+    logid: le.logid,
+    title: le.title,
+    timestamp: le.timestamp,
+    comment: le.comment,
+    params: le.params,
+    user: le.user
+});
+
+const blockEvent = (unblockAction, reblockAction) => le => ({
+    ...eventBase(le),
+    unblock: le.action === unblockAction,
+    reblock: le.action === reblockAction
+});
+
+const uploadEvent = le => ({
+    logid: le.logid,
+    action: le.action,
+    title: le.title,
+    timestamp: le.timestamp,
+    comment: le.comment || "",
+    tags: le.tags || [ ]
+});
+
+const withReason = block => ({ ...block, reason: block.reason || "" });
+const localBlock = ({ user: _, ...block }) => withReason(block);
+const globalBlock = ({ target: _, ...block }) => withReason(block);
+
+const revisionsParams = revids => ({
+    action: "query",
+    prop: "revisions",
+    revids: revids.join("|"),
+    rvprop: "ids|content",
+    rvslots: "main"
+});
+
+const createEdit = contrib => ({
+    title: contrib.title,
+    revid: contrib.revid,
+    parentid: contrib.parentid,
+
+    timestamp: contrib.timestamp,
+    comment: contrib.comment || "",
+    tags: contrib.tags || [ ],
+    sizediff: contrib.sizediff,
+
+    categories: [ ],
+    images: { "+": [ ], "-": [ ] },
+    links: { "+": [ ], "-": [ ] },
+
+    // A: this revision, B: its parent (c: categories, i: images, l: links, d: loaded)
+    A: { c: [ ], i: [ ], l: [ ], d: false },
+    B: { c: [ ], i: [ ], l: [ ], d: false }
+});
+
+const finishEdit = edit => {
+    const { A, B } = edit;
+    delete edit.A;
+    delete edit.B;
+
+    edit.categories = A.c;
+
+    const imagesA = new Set(A.i);
+    const imagesB = new Set(B.i);
+    edit.images["+"] = A.i.filter(image => !imagesB.has(image));
+    edit.images["-"] = B.i.filter(image => !imagesA.has(image));
+
+    // link capitalization changes don't count as new links
+    const linksA = new Set(A.l.map(link => link.toLowerCase()));
+    const linksB = new Set(B.l.map(link => link.toLowerCase()));
+    edit.links["+"] = A.l.filter(link => !linksB.has(link.toLowerCase()));
+    edit.links["-"] = B.l.filter(link => !linksA.has(link.toLowerCase()));
+};
+
+const applyRevisions = (response, side, other, lookup) => {
+    const store = (revid, content) => {
+        for (const edit of lookup(revid)) {
+            edit[side] = content;
+            if (edit[other].d) finishEdit(edit);
+        }
+    };
+
+    for (const bad of Object.values(response.query.badrevids || { }))
+        for (const edit of lookup(bad.revid)) {
+            edit[side].d = true;
+            if (edit[other].d) finishEdit(edit);
+        }
+
+    for (const page of response.query.pages || [ ])
+        for (const rev of page.revisions || [ ])
+            store(rev.revid, ParseWikitext(revisionContent(rev)));
 };
 
 async function GetUserData(getToken, users, projectRules, callback = () => { }) {
@@ -102,75 +299,14 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
     if (typeof callback !== "function")
         throw new Error("(get-user-data) Invalid callback");
 
-    users = Array.from(new Set(users.filter(user => user && typeof user === "string").map(NormalizeUser).filter(Boolean)));
+    users = Array.from(new Set(
+        users.filter(user => user && typeof user === "string").map(NormalizeUser).filter(Boolean)
+    ));
 
-    let sitematrix = await fetch(`${self.location.origin}/sitematrix`).then(res => res.json());
-    {
-        const temp = { set: new Set(), map: new Map(), reverse: new Map() };
-        for (const [ key, value ] of Object.entries(sitematrix)) {
-            temp.set.add(value);
-            temp.map.set(key, value);
-            temp.reverse.set(value, key);
-        }
+    const sitematrix = await loadSitematrix();
+    const projects = resolveProjects(projectRules, sitematrix);
 
-        sitematrix = temp;
-    }
-
-    const projects = { all: false, include: new Set(), exclude: new Set() };
-    for (const rule of projectRules) {
-        const normalized = rule.toLowerCase();
-        if (normalized === "*") {
-            projects.all = true;
-            projects.include.clear();
-            projects.exclude.clear();
-        } else if (normalized.startsWith("!")) {
-            let project = normalized.slice(1);
-            if (sitematrix.set.has(project)) project = project;
-            else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
-            else continue;
-
-            if (projects.all)
-                projects.exclude.add(project);
-            else
-                projects.include.delete(project);
-        } else {
-            let project = normalized;
-            if (sitematrix.set.has(project)) project = project;
-            else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
-            else continue;
-
-            if (projects.all)
-                projects.exclude.delete(project);
-            else
-                projects.include.add(project);
-        }
-    }
-
-    const state = { users: users.slice(), projects: [ ] };
-
-    if (projects.all) state.projects.push("*");
-
-    {
-        const temp = new Set();
-        for (const project of projects.include)
-            if (sitematrix.set.has(project)) {
-                state.projects.push(project);
-                temp.add(sitematrix.reverse.get(project));
-            }
-        projects.include = temp;
-    }
-
-    {
-        const temp = new Set();
-        for (const project of projects.exclude)
-            if (sitematrix.set.has(project)) {
-                state.projects.push(`!${project}`);
-                temp.add(sitematrix.reverse.get(project));
-            }
-        projects.exclude = temp;
-    }
-
-    postMessage({ type: "history", state });
+    postMessage({ type: "history", state: { users: users.slice(), projects: projects.history } });
 
     if (users.length === 0) {
         callback({ status: "progress", data: 1 });
@@ -178,22 +314,28 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
         return { close: () => { } };
     }
 
-    const cancel = { cancelled: false };
+    let cancelled = false;
     let finished = false;
+
+    // Everything except the initial login requests waits until all of those have returned.
+    let releaseLoginBarrier;
+    const loginBarrier = new Promise(resolve => { releaseLoginBarrier = resolve; });
+    let loginResponsesRemaining = users.length;
+    const initialLoginReturned = () => {
+        if (--loginResponsesRemaining === 0) releaseLoginBarrier();
+    };
+
     const fail = error => {
         if (finished) return;
         finished = true;
-        cancel.cancelled = true;
+        cancelled = true;
+        releaseLoginBarrier();
         callback({ status: "error", data: error });
     };
 
     const progressMap = new Map();
     let lastProgress = 0;
-    const reportProgress = (user, done, total) => {
-        if (done === undefined && total === undefined) {
-            const temp = progressMap.get(user) ?? { done: 1, total: 1 };
-            done = temp.done, total = temp.total;
-        }
+    const reportProgress = (user, { done, total } = progressMap.get(user) ?? { done: 1, total: 1 }) => {
         progressMap.set(user, { done, total });
 
         let doneSum = 0, totalSum = 0;
@@ -201,7 +343,6 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
             doneSum += p.done;
             totalSum += p.total;
         }
-
         if (totalSum === 0) return;
 
         const progress = doneSum / totalSum;
@@ -214,136 +355,68 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
 
     const createTracker = onIdle => {
         let pending = 0;
-        return items => {
-            const wrapped = items.map(([ project, params, handler, priority = 0 ]) => {
+        return (requests, initialLogin = false) => {
+            const items = requests.map(([ project, params, handler, priority = PRIORITY.normal ]) => {
                 pending++;
+
                 let settled = false;
                 const settle = () => {
                     if (settled) return;
                     settled = true;
-                    if (--pending === 0 && !cancel.cancelled) onIdle();
+                    if (--pending === 0 && !cancelled) onIdle();
                 };
+
                 return {
                     priority,
-                    cancelled: () => cancel.cancelled,
+                    cancelled: () => cancelled,
                     settle,
                     run: () => mwGet(project, params)
-                        .then(response => { if (!cancel.cancelled) handler(response); })
+                        .then(response => { if (!cancelled) handler(response); })
                         .catch(fail)
                         .finally(settle)
                 };
             });
-            scheduler.enqueue(wrapped);
+
+            if (initialLogin) scheduler.enqueue(items);
+            else loginBarrier.then(() => scheduler.enqueue(items));
         };
     };
 
-    const parseUser = (user, projects) => new Promise(resolve => {
+    const parseUser = user => new Promise(resolve => {
         const progress = {
             total: 0,
             done: 0,
-            update(n) {
-                if (n === 0) return reportProgress(user, this.done, this.total);
-
-                const temp = this.done;
-                this.done = Math.min(this.done + n, this.total);
-                if (this.done > temp) reportProgress(user, this.done, this.total);
+            report() {
+                reportProgress(user, this);
+            },
+            advance(n) {
+                const done = Math.min(this.done + n, this.total);
+                if (done === this.done) return;
+                this.done = done;
+                this.report();
             }
         };
 
         const data = { missing: true, user, groups: [ ], rights: [ ], block: [ ], blocks: [ ], uploads: [ ], locks: [ ] };
         const projectsMap = new Map();
 
-        const buildEdit = edit => {
-            const { A, B } = edit;
-            delete edit.A;
-            delete edit.B;
-
-            edit.categories = A.c;
-
-            const imagesA = new Set(A.i);
-            const imagesB = new Set(B.i);
-            edit.images["+"] = A.i.filter(image => !imagesB.has(image));
-            edit.images["-"] = B.i.filter(image => !imagesA.has(image));
-
-            // link capitalization changes don't count as new links
-            const linksA = new Set(A.l.map(link => link.toLowerCase()));
-            const linksB = new Set(B.l.map(link => link.toLowerCase()));
-            edit.links["+"] = A.l.filter(link => !linksB.has(link.toLowerCase()));
-            edit.links["-"] = B.l.filter(link => !linksA.has(link.toLowerCase()));
-        };
-
-        const finalize = () => {
+        const enqueue = createTracker(() => {
             if (progress.done < progress.total) {
                 progress.done = progress.total;
-                progress.update(0);
+                progress.report();
             }
-
             resolve(data);
-        };
+        });
 
-        const enqueue = createTracker(finalize);
-
-        const uploadsBody = {
-            action: "query",
-            list: "logevents",
-            leuser: user,
-            letype: "upload",
-            leaction: "upload/upload",
-            leprop: "ids|title|timestamp|comment|tags",
-            lelimit: "max"
-        };
-        const uploadsHandler = response => {
-            AddArrayToArray(data.uploads, (response.query.logevents || [ ]).map(le => ({
-                logid: le.logid,
-                title: le.title,
-                timestamp: le.timestamp,
-                comment: le.comment || "",
-                tags: le.tags || [ ]
-            })));
-            if (response.continue)
-                enqueue([ [ "commons.wikimedia.org", { ...uploadsBody, ...response.continue }, uploadsHandler, 0 ] ]);
-        };
-
-        const locksBody = {
-            action: "query",
-            list: "logevents",
-            letype: "globalauth",
-            leaction: "globalauth/setstatus",
-            letitle: `User:${user}@global`,
-            lelimit: "max"
-        };
-        const locksHandler = response => {
-            AddArrayToArray(data.locks, (response.query.logevents || [ ]).map(le => ({
-                logid: le.logid,
-                title: le.title,
-                timestamp: le.timestamp,
-                comment: le.comment,
-                params: le.params,
-                user: le.user
-            })));
-            if (response.continue)
-                enqueue([ [ "meta.wikimedia.org", { ...locksBody, ...response.continue }, locksHandler, 0 ] ]);
-        };
-
-        const globalBlocksBody = {
-            action: "query",
-            list: "logevents",
-            letype: "gblblock",
-            letitle: `User:${user}`,
-            lelimit: "max"
-        };
-        const globalBlocksHandler = response => {
-            AddArrayToArray(data.blocks, (response.query.logevents || [ ]).map(le => ({
-                logid: le.logid,
-                title: le.title,
-                timestamp: le.timestamp,
-                comment: le.comment,
-                params: le.params,
-                user: le.user,
-                unblock: le.action === "gunblock"
-            })));
-            if (response.continue)
-                enqueue([ [ "meta.wikimedia.org", { ...globalBlocksBody, ...response.continue }, globalBlocksHandler, 0 ] ]);
+        /** Builds a request for a paginated list=logevents query that appends into `target`. */
+        const logEventsRequest = (project, params, target, mapEvent) => {
+            const body = { action: "query", list: "logevents", lelimit: "max", ...params };
+            const handler = response => {
+                AddArrayToArray(target, (response.query.logevents || [ ]).map(mapEvent));
+                if (response.continue)
+                    enqueue([ [ project, { ...body, ...response.continue }, handler ] ]);
+            };
+            return [ project, body, handler ];
         };
 
         const contribsBody = {
@@ -356,243 +429,191 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
             bkprop: "id|user|by|reason|expiry|flags"
         };
 
-        const applyRevisions = (response, target, other, lookup) => {
-            for (const bad of Object.values(response.query.badrevids || { }))
-                for (const edit of lookup(bad.revid)) {
-                    edit[target].d = true;
-                    if (edit[other].d) buildEdit(edit);
-                }
-
-            for (const page of response.query.pages || [ ])
-                for (const rev of page.revisions || [ ])
-                    for (const edit of lookup(rev.revid)) {
-                        edit[target] = ParseWikitext(revisionContent(rev));
-                        if (edit[other].d) buildEdit(edit);
-                    }
-        };
-
-        const handleNewEdits = (project, edits) => {
-            if (edits.length === 0) return;
+        const handleNewEdits = (project, contribs) => {
+            if (contribs.length === 0) return;
 
             const projectData = projectsMap.get(project);
+            const editsByRevid = new Map();
+            const basesByParent = new Map(); // parent revid -> set of revids built on it
+            const pendingParents = new Set();
+            let parentlessEdits = 0;
 
-            const editMap = new Map();
-            const parentToBase = new Map();
-            const parentIds = new Set();
-            let skippedParents = 0;
+            const requestRevisions = (revids, side, other, lookup) => enqueue([[
+                project,
+                revisionsParams(revids),
+                response => {
+                    applyRevisions(response, side, other, lookup);
+                    progress.advance(1);
+                }
+            ]]);
 
-            const requestParents = ids => {
-                enqueue([
-                    [
-                        project,
-                        { action: "query", prop: "revisions", revids: ids.join("|"), rvprop: "ids|content", rvslots: "main" },
-                        response => {
-                            applyRevisions(response, "B", "A", revid => Array.from(parentToBase.get(revid) ?? [ ], base => editMap.get(base)));
-                            progress.update(1);
-                        },
-                        0
-                    ]
-                ]);
-            };
+            const requestParents = parentIds => requestRevisions(parentIds, "B", "A", revid =>
+                Array.from(basesByParent.get(revid) ?? [ ], base => editsByRevid.get(base))
+            );
 
-            for (const batch of BatchArray(edits, EDIT_BATCH)) {
-                const baseRevids = [ ];
-                for (const batchEdit of batch) {
-                    const edit = {
-                        title: batchEdit.title,
-                        revid: batchEdit.revid,
-                        parentid: batchEdit.parentid,
+            for (const batch of BatchArray(contribs, EDIT_BATCH)) {
+                const revids = [ ];
 
-                        timestamp: batchEdit.timestamp,
-                        comment: batchEdit.comment || "",
-                        tags: batchEdit.tags || [ ],
-                        sizediff: batchEdit.sizediff,
-
-                        categories: [ ],
-                        images: { "+": [ ], "-": [ ] },
-                        links: { "+": [ ], "-": [ ] },
-
-                        A: { c: [ ], i: [ ], l: [ ], d: false },
-                        B: { c: [ ], i: [ ], l: [ ], d: false }
-                    };
-
+                for (const contrib of batch) {
+                    const edit = createEdit(contrib);
                     projectData.edits.push(edit);
-                    editMap.set(batchEdit.revid, edit);
-                    baseRevids.push(batchEdit.revid);
+                    editsByRevid.set(contrib.revid, edit);
+                    revids.push(contrib.revid);
 
-                    if (batchEdit.parentid) {
-                        parentIds.add(batchEdit.parentid);
-                        if (!parentToBase.has(batchEdit.parentid)) parentToBase.set(batchEdit.parentid, new Set());
-                        parentToBase.get(batchEdit.parentid).add(batchEdit.revid);
+                    if (contrib.parentid) {
+                        pendingParents.add(contrib.parentid);
+                        if (!basesByParent.has(contrib.parentid)) basesByParent.set(contrib.parentid, new Set());
+                        basesByParent.get(contrib.parentid).add(contrib.revid);
                     } else {
                         edit.B.d = true; // page creation, nothing to compare against
-                        skippedParents = (skippedParents + 1) % EDIT_BATCH;
-                        if (skippedParents === 0) progress.update(1);
+                        parentlessEdits = (parentlessEdits + 1) % EDIT_BATCH;
+                        if (parentlessEdits === 0) progress.advance(1); // stands in for a skipped parent request
                     }
                 }
 
-                enqueue([
-                    [
-                        project,
-                        { action: "query", prop: "revisions", revids: baseRevids.join("|"), rvprop: "ids|content", rvslots: "main" },
-                        response => {
-                            applyRevisions(response, "A", "B", revid => editMap.has(revid) ? [ editMap.get(revid) ] : [ ]);
-                            progress.update(1);
-                        },
-                        0
-                    ]
-                ]);
+                requestRevisions(revids, "A", "B", revid => editsByRevid.has(revid) ? [ editsByRevid.get(revid) ] : [ ]);
 
-                if (parentIds.size >= EDIT_BATCH) {
-                    const ids = Array.from(parentIds).slice(0, EDIT_BATCH);
-                    for (const id of ids) parentIds.delete(id);
-                    requestParents(ids);
+                if (pendingParents.size >= EDIT_BATCH) {
+                    const parentIds = Array.from(pendingParents).slice(0, EDIT_BATCH);
+                    parentIds.forEach(id => pendingParents.delete(id));
+                    requestParents(parentIds);
                 }
             }
 
-            if (parentIds.size > 0) requestParents(Array.from(parentIds));
+            if (pendingParents.size > 0) requestParents(Array.from(pendingParents));
         };
 
-        const editsEnqueue = (project, params) => {
-            enqueue([
-                [
-                    project,
-                    params,
-                    response => {
-                        if (response.query.blocks)
-                            AddArrayToArray(projectsMap.get(project).block, response.query.blocks.map(({ user: _, ...block }) =>
-                                ({ ...block, reason: block.reason || "" })
-                            ));
+        const enqueueEdits = (project, params) => {
+            enqueue([[
+                project,
+                params,
+                response => {
+                    if (response.query.blocks)
+                        AddArrayToArray(projectsMap.get(project).block, response.query.blocks.map(localBlock));
 
-                        handleNewEdits(project, response.query.usercontribs || [ ]);
-                        if (response.continue)
-                            editsEnqueue(project, { ...contribsBody, ...response.continue });
+                    handleNewEdits(project, response.query.usercontribs || [ ]);
+                    if (response.continue)
+                        enqueueEdits(project, { ...contribsBody, ...response.continue });
 
-                        progress.update(1);
-                    },
-                    1
-                ]
-            ]);
+                    progress.advance(1);
+                },
+                PRIORITY.contribs
+            ]]);
         };
 
-        const localBlocksEnqueue = project => {
-            const params = {
+        const handleLogin = response => {
+            initialLoginReturned();
+
+            const globalUserInfo = response.query.globaluserinfo;
+            if (globalUserInfo.missing === true) return resolve(null);
+
+            const globalUser = response.query.globalusers[0];
+
+            data.home = sitematrix.hostByCode.get(globalUserInfo.home) || null;
+            data.registration = { project: globalUserInfo.home, timestamp: globalUserInfo.registration };
+            data.edit_count = globalUser.editcount;
+            data.groups = globalUser.groups || [ ];
+            data.rights = globalUser.rights || [ ];
+            data.locked = globalUser.locked;
+            AddArrayToArray(data.block, (response.query.globalblocks || [ ]).map(globalBlock));
+            data.projects = [ ];
+            data.missing = false;
+
+            const merged = (globalUserInfo.merged ?? [ ])
+                .map(merge => ({ merge, host: new URL(merge.url).hostname }))
+                .filter(({ host }) => !projects.exclude.has(host) && (projects.all || projects.include.has(host)));
+
+            progress.total = merged.reduce((total, { merge }) => total + getExpectedEditRequests(merge.editcount), 0);
+
+            for (const { merge, host } of merged) {
+                const projectData = {
+                    project: host,
+                    code: merge.wiki,
+                    registration: { method: merge.method, timestamp: merge.timestamp },
+                    edit_count: merge.editcount,
+                    block: [ ],
+                    blocks: [ ],
+                    edits: [ ]
+                };
+                projectsMap.set(host, projectData);
+                data.projects.push(projectData);
+
+                if (merge.editcount > 0) {
+                    enqueueEdits(host, contribsBody);
+                    enqueue([ logEventsRequest(host, { letype: "block", letitle: `User:${user}` }, projectData.blocks, blockEvent("unblock", "reblock")) ]);
+                }
+            }
+
+            progress.report();
+        };
+
+        enqueue([[
+            "login.wikimedia.org",
+            {
                 action: "query",
-                list: "logevents",
-                letype: "block",
-                letitle: `User:${user}`,
-                lelimit: "max"
-            };
-            const handler = response => {
-                AddArrayToArray(projectsMap.get(project).blocks, (response.query.logevents || [ ]).map(le => ({
-                    logid: le.logid,
-                    title: le.title,
-                    timestamp: le.timestamp,
-                    comment: le.comment,
-                    params: le.params,
-                    user: le.user,
-                    unblock: le.action === "unblock"
-                })));
-                if (response.continue)
-                    enqueue([ [ project, { ...params, ...response.continue }, handler, 0 ] ]);
-            };
-
-            enqueue([ [ project, params, handler, 0 ] ]);
-        };
+                list: "globalusers|globalblocks",
+                meta: "globaluserinfo",
+                gususers: user,
+                gusprop: "editcount|groups|rights|locked",
+                bgtargets: user,
+                bglimit: "max",
+                guiprop: "merged",
+                guiuser: user
+            },
+            handleLogin,
+            PRIORITY.login
+        ]], true);
 
         enqueue([
-            [
-                "login.wikimedia.org",
-                {
-                    action: "query",
-                    list: "globalusers|globalblocks",
-                    meta: "globaluserinfo",
-                    gususers: user,
-                    gusprop: "editcount|groups|rights|locked",
-                    bgtargets: user,
-                    bglimit: "max",
-                    guiprop: "merged",
-                    guiuser: user
-                },
-                response => {
-                    const globalUserInfo = response.query.globaluserinfo;
-                    if (globalUserInfo.missing === true) return resolve(null);
-
-                    const globalUser = response.query.globalusers[0];
-                    data.projects = [ ];
-
-                    data.registration = { project: globalUserInfo.home, timestamp: globalUserInfo.registration };
-                    data.edit_count = globalUser.editcount;
-                    data.groups = globalUser.groups || [ ];
-                    data.rights = globalUser.rights || [ ];
-                    data.locked = globalUser.locked;
-                    AddArrayToArray(data.block, (response.query.globalblocks || [ ]).map(({ target: _, ...block }) =>
-                        ({ ...block, reason: block.reason || "" })
-                    ));
-                    data.missing = false;
-
-                    const mergedProjects = (globalUserInfo.merged ?? [ ])
-                        .map(merge => ({ merge, project: new URL(merge.url).hostname }))
-                        .filter(({ project }) => !projects.exclude.has(project) && (projects.all || projects.include.has(project)));
-
-                    progress.total = mergedProjects.reduce((total, { merge }) => total + getExpectedEditRequests(merge.editcount), 0);
-                    for (const { merge, project } of mergedProjects) {
-                        const projectData = {
-                            project,
-                            code: merge.wiki,
-                            registration: { method: merge.method, timestamp: merge.timestamp },
-                            edit_count: merge.editcount,
-                            block: [ ],
-                            blocks: [ ],
-                            edits: [ ]
-                        };
-                        projectsMap.set(project, projectData);
-                        data.projects.push(projectData);
-
-                        if (merge.editcount > 0) {
-                            editsEnqueue(project, contribsBody);
-                            localBlocksEnqueue(project);
-                        }
-                    }
-
-                    progress.update(0);
-                },
-                2
-            ],
-            [ "commons.wikimedia.org", uploadsBody, uploadsHandler, 0 ],
-            [ "meta.wikimedia.org", locksBody, locksHandler, 0 ],
-            [ "meta.wikimedia.org", globalBlocksBody, globalBlocksHandler, 0 ]
+            logEventsRequest("commons.wikimedia.org", {
+                leuser: user,
+                letype: "upload",
+                leaction: "upload/upload",
+                leprop: "ids|title|timestamp|comment|tags"
+            }, data.uploads, uploadEvent),
+            logEventsRequest("meta.wikimedia.org", {
+                letype: "globalauth",
+                leaction: "globalauth/setstatus",
+                letitle: `User:${user}@global`
+            }, data.locks, eventBase),
+            logEventsRequest("meta.wikimedia.org", {
+                letype: "gblblock",
+                letitle: `User:${user}`
+            }, data.blocks, blockEvent("gunblock", "modify"))
         ]);
     });
 
-    // Learn the caller's rate limit tier first, then fetch every user.
-    mwGet("login.wikimedia.org", { action: "query", meta: "globaluserinfo", guiprop: "groups" })
-        .then(response => {
-            if (cancel.cancelled) return;
-            const groups = response.query.globaluserinfo?.groups || [ ];
-            scheduler.rateLimit = groups.some(group => [ "local-bot", "steward" ].includes(group)) ? RATE_LIMIT_EXEMPT : RATE_LIMIT_NORMAL;
+    const run = async () => {
+        // Learn the caller's rate limit tier first, then fetch every user.
+        const response = await mwGet("login.wikimedia.org", { action: "query", meta: "globaluserinfo", guiprop: "groups" });
+        if (cancelled) return;
 
-            return Promise.all(users.map(async user => {
-                return parseUser(user, projects).then(result => {
-                    reportProgress(user);
-                    return result;
-                });
-            }));
-        })
-        .then(results => {
-            if (cancel.cancelled) return;
-            if (finished) return;
-            finished = true;
+        const groups = response.query.globaluserinfo?.groups || [ ];
+        scheduler.rateLimit = groups.some(group => [ "local-bot", "steward" ].includes(group))
+            ? RATE_LIMIT_EXEMPT
+            : RATE_LIMIT_NORMAL;
 
-            callback({ status: "done", data: results.filter(Boolean) });
-        })
-        .catch(error => { fail(error); });
+        const results = await Promise.all(users.map(async user => {
+            const result = await parseUser(user);
+            reportProgress(user);
+            return result;
+        }));
+        if (cancelled || finished) return;
 
-    return { close: () => { cancel.cancelled = true; } };
+        finished = true;
+        callback({ status: "done", data: results.filter(Boolean) });
+    };
+    run().catch(fail);
+
+    return {
+        close: () => {
+            cancelled = true;
+            releaseLoginBarrier();
+        }
+    };
 }
 
-export default GetUserData;
-
+// Worker bridge: tokens are owned by the main thread and requested on demand.
 const tokenRequests = new Map();
 let nextTokenRequestId = 0;
 
@@ -602,31 +623,26 @@ const requestToken = () => new Promise((resolve, reject) => {
     postMessage({ type: "token-request", id });
 });
 
-self.addEventListener("message", event => {
-    const message = event.data;
-
+self.addEventListener("message", ({ data: message }) => {
     if (message.type === "token-response") {
         const request = tokenRequests.get(message.id);
         if (!request) return;
         tokenRequests.delete(message.id);
 
-        if (message.error)
-            request.reject(new Error(message.error));
-        else
-            request.resolve(message.token);
-        return;
+        if (message.error) request.reject(new Error(message.error));
+        else request.resolve(message.token);
+    } else if (message.type === "start") {
+        GetUserData(requestToken, message.users, message.projectRules, result => {
+            if (result.status === "error") {
+                result.data = {
+                    message: String(result.data),
+                    name: result.data?.name || "Error",
+                    stack: result.data?.stack
+                };
+            }
+            postMessage({ type: "result", result });
+        });
     }
-
-    if (message.type !== "start") return;
-
-    GetUserData(requestToken, message.users, message.projectRules, result => {
-        if (result.status === "error") {
-            result.data = {
-                message: String(result.data),
-                name: result.data?.name || "Error",
-                stack: result.data?.stack
-            };
-        }
-        postMessage({ type: "result", result });
-    });
 });
+
+export default GetUserData;

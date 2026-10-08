@@ -1,5 +1,15 @@
 @use "../tokens" as *;
 
+$shadow-color: rgb(54, 72, 54);
+$cell-border-color: rgb(82, 119, 77);
+$tooltip-background: #3f5143;
+$transition: 160ms ease;
+
+@mixin focus-ring {
+    outline: 2px solid $accent;
+    outline-offset: 1px;
+}
+
 .timecard-page {
     display: flex;
     flex-wrap: wrap;
@@ -10,212 +20,203 @@
     min-height: 100%;
     margin: 0 auto;
     padding: clamp(1rem, 3vw, 2rem) 0;
+}
 
-    & > .timecard-view {
-        display: flex;
-        justify-content: center;
-        gap: 0.25rem;
-        flex: 0 0 100%;
-        order: -1;
-        align-self: center;
-        width: 100%;
+.timecard-view {
+    display: flex;
+    justify-content: center;
+    gap: 0.25rem;
+    flex: 0 0 100%;
+    order: -1;
+}
 
-        & > .timecard-view-button {
-            min-width: 4rem;
-            padding: 0.35rem 0.65rem;
-            border: 0;
-            border-radius: 5px;
-            background: transparent;
-            color: $muted;
-            font: inherit;
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 160ms ease, color 160ms ease;
+.timecard-view-button {
+    min-width: 4rem;
+    padding: 0.35rem 0.65rem;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: $muted;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color $transition, color $transition;
 
-            &[aria-pressed="true"] {
-                background: $accent-soft;
-                color: $accent-ink;
-            }
-
-            &:hover {
-                color: $text;
-            }
-
-            &:focus-visible {
-                outline: 2px solid $accent;
-                outline-offset: 1px;
-            }
-        }
+    &[aria-pressed="true"] {
+        background: $accent-soft;
+        color: $accent-ink;
     }
 
-    & > .timecard {
-        display: flex;
-        flex-direction: column;
-        flex: 0 1 31rem;
-        min-width: 0;
-        gap: 0.75rem;
-        padding: 1rem;
-        border: 1px solid $border;
-        border-radius: 14px;
-        background: $surface;
-        box-shadow: 0 3px 12px rgba(54, 72, 54, 0.06);
-
-        & > .timecard-caption {
-            margin: 0;
-            color: $accent-ink;
-            font-size: 1rem;
-            font-weight: 650;
-            text-align: center;
-            overflow-wrap: anywhere;
-        }
-
-        & > .timecard-table {
-            display: grid;
-            grid-template-columns: 1.25rem repeat(24, minmax(0, 1fr)) 0.5rem minmax(0, 1fr);
-            grid-auto-rows: auto;
-            align-items: center;
-            gap: 3px;
-            width: 100%;
-
-            & > div {
-                text-align: center;
-                font-size: 0.7rem;
-                font-variant-numeric: tabular-nums;
-                color: $muted;
-
-                &.hour-label  {
-                    font-size: 0.65rem;
-                    color: $muted;
-                    white-space: nowrap;
-                }
-
-                &.day-label {
-                    text-align: left;
-                    font-size: 0.68rem;
-                    font-weight: 600;
-                    white-space: nowrap;
-                }
-
-                &.cell {
-                    aspect-ratio: 1;
-                    min-width: 0;
-                    border: 1px solid rgba(82, 119, 77, 0.1);
-                    border-radius: 3px;
-                    background-color: hsl(104 28% calc(96% - var(--value) * 38%));
-                    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-
-                    &.summary-cell {
-                        border-color: rgba(82, 119, 77, 0.16);
-                        border-radius: 4px;
-                    }
-
-                    &.empty {
-                        pointer-events: none;
-                    }
-
-                    &:hover, &:focus {
-                        z-index: 1;
-                        border-color: $accent;
-                        transform: scale(1.1);
-                        box-shadow: 0 2px 8px rgba(54, 72, 54, 0.16);
-                    }
-                }
-
-                &.spacer {
-                    visibility: hidden;
-                    width: 0.5rem;
-                    height: 0.5rem;
-                }
-
-                &.grand-total {
-                    color: $accent-ink;
-                    font-size: 0.7rem;
-                    font-weight: 650;
-                }
-            }
-
-            &[data-view="days"] {
-                grid-template-columns: repeat(7, minmax(0, 1fr));
-                gap: 0.4rem;
-
-                & > :not(.day-label):not(.day-total) {
-                    display: none;
-                }
-
-                & > .day-label {
-                    padding: 0;
-                    text-align: center;
-                }
-            }
-
-            &[data-view="hours"] {
-                grid-template-columns: repeat(24, minmax(0, 1fr));
-                gap: 3px;
-
-                & > :not(.hour-label):not(.hour-total) {
-                    display: none;
-                }
-            }
-        }
+    &:hover {
+        color: $text;
     }
 
-    & > .timecard-tooltip {
-        pointer-events: none;
-        position: fixed;
-        z-index: 5;
-        padding: 0.25rem 0.5rem;
-        border-radius: 0.5rem;
-        background: #3f5143;
-        color: #fffefb;
-        box-shadow: 0 4px 14px rgba(35, 48, 37, 0.18);
-        transform: translate(-50%, -100%);
+    &:focus-visible {
+        @include focus-ring;
+    }
+}
+
+.timecard {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 31rem;
+    min-width: 0;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid $border;
+    border-radius: 14px;
+    background: $surface;
+    box-shadow: 0 3px 12px rgba($shadow-color, 0.06);
+}
+
+.timecard-caption {
+    margin: 0;
+    color: $accent-ink;
+    font-size: 1rem;
+    font-weight: 650;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.timecard-table {
+    --label-width: 1.25rem;
+    --spacer-width: 0.5rem;
+    --cell-gap: 3px;
+    --days-gap: 0.4rem;
+
+    display: grid;
+    grid-template-columns: var(--label-width) repeat(24, minmax(0, 1fr)) var(--spacer-width) minmax(0, 1fr);
+    grid-auto-rows: auto;
+    align-items: center;
+    gap: var(--cell-gap);
+    width: 100%;
+
+    & > div {
+        color: $muted;
+        font-size: 0.7rem;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+    }
+
+    & > .hour-label {
+        font-size: 0.65rem;
         white-space: nowrap;
-        transition: opacity 0.2s;
+    }
 
-        &.hidden {
-            opacity: 0;
+    & > .day-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    & > .cell {
+        aspect-ratio: 1;
+        min-width: 0;
+        border: 1px solid rgba($cell-border-color, 0.1);
+        border-radius: 3px;
+        background-color: hsl(104 28% calc(96% - var(--value) * 38%));
+        transition: transform $transition, border-color $transition, box-shadow $transition;
+
+        &.summary-cell {
+            border-color: rgba($cell-border-color, 0.16);
+            border-radius: 4px;
         }
 
-        & > .tooltip-title {
-            margin-bottom: 0.25rem;
-            font-weight: bold;
+        &.empty {
+            pointer-events: none;
         }
 
-        & > .tooltip-content {
-            font-size: 0.875rem;
+        &:hover,
+        &:focus {
+            z-index: 1;
+            border-color: $accent;
+            transform: scale(1.1);
+            box-shadow: 0 2px 8px rgba($shadow-color, 0.16);
+        }
+    }
+
+    & > .spacer {
+        visibility: hidden;
+        width: 0.5rem;
+        height: 0.5rem;
+    }
+
+    & > .grand-total {
+        color: $accent-ink;
+        font-size: 0.7rem;
+        font-weight: 650;
+    }
+
+    &[data-view="days"] {
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: var(--days-gap);
+
+        & > :not(.day-label):not(.day-total) {
+            display: none;
         }
 
-        &::after {
-            position: absolute;
-            left: 50%;
-            border: 0.5rem solid transparent;
-            border-top-color: #3f5143;
-            content: "";
-            transform: translate(-50%, 0.25rem);
+        & > .day-label {
+            padding: 0;
+            text-align: center;
+        }
+    }
+
+    &[data-view="hours"] {
+        grid-template-columns: repeat(24, minmax(0, 1fr));
+
+        & > :not(.hour-label):not(.hour-total) {
+            display: none;
         }
     }
 }
 
+.timecard-tooltip {
+    pointer-events: none;
+    position: fixed;
+    z-index: 5;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    background: $tooltip-background;
+    color: #fffefb;
+    box-shadow: 0 4px 14px rgba(35, 48, 37, 0.18);
+    transform: translate(-50%, -100%);
+    white-space: nowrap;
+    transition: opacity 0.2s;
+
+    &.hidden {
+        opacity: 0;
+    }
+
+    &::after {
+        position: absolute;
+        left: 50%;
+        border: 0.5rem solid transparent;
+        border-top-color: $tooltip-background;
+        content: "";
+        transform: translate(-50%, 0.25rem);
+    }
+
+    & > .tooltip-title {
+        margin-bottom: 0.25rem;
+        font-weight: bold;
+    }
+
+    & > .tooltip-content {
+        font-size: 0.875rem;
+    }
+}
+
 @media (max-width: 420px) {
-    .timecard-page {
-        & > .timecard {
-            padding: 0.75rem;
-        }
+    .timecard {
+        padding: 0.75rem;
+    }
 
-        & > .timecard > .timecard-table {
-            grid-template-columns: 2rem repeat(24, minmax(0, 1fr)) 0.25rem minmax(0, 1fr);
-            gap: 2px;
-
-            &[data-view="days"] {
-                grid-template-columns: repeat(7, minmax(0, 1fr));
-                gap: 0.3rem;
-            }
-
-            &[data-view="hours"] {
-                grid-template-columns: repeat(24, minmax(0, 1fr));
-                gap: 2px;
-            }
-        }
+    .timecard-table {
+        --label-width: 2rem;
+        --spacer-width: 0.25rem;
+        --cell-gap: 2px;
+        --days-gap: 0.3rem;
     }
 }

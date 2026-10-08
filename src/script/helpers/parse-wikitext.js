@@ -14,6 +14,10 @@ for (const ch of " \t\n\v\f\r[]<>\"'|{}") LT[ch.charCodeAt(0)] = 1;
 const STOP = new Uint8Array(128);
 for (const ch of "\n[]{}\\/<>#|:") STOP[ch.charCodeAt(0)] = 1;
 
+// chars worth a closer look
+const SK = new Uint8Array(105);
+SK[91] = SK[46] = SK[104] = SK[72] = 1;   // [ . h H
+
 const IMG_LEN = [7, 9, 8];
 
 // JS String.prototype.trim() whitespace
@@ -94,7 +98,13 @@ const ParseWikitext = s => {
         if ((cm | im | lm | ci | ii | li) === 0) {
             for (; p < n; p++) {
                 const d = s.charCodeAt(p);
-                if (d === 91 || d === 46 || d === 104 || d === 72) break;
+                if (d > 104 || SK[d] === 0) continue;                 // most chars rejected here
+                if (d === 91) { if (s.charCodeAt(p + 1) === 91) break; }       // only "[[" can start cat/file
+                else if (d === 104 || d === 72) {                              // only "ht" can start a link
+                    const e = s.charCodeAt(p + 1);
+                    if (e === 116 || e === 84) break;
+                }
+                else if (extLen(s, p) !== 0) break;                            // only a real ".ext"
             }
             if (p >= n) break;
         }

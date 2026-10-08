@@ -1,24 +1,188 @@
+@use "sass:map";
 @use "../tokens" as *;
 
+$shadow-color: rgb(54, 72, 54);
+$transition: 150ms ease;
+
+$kind-colors: (
+    local-registration: (border: $accent-border, background: $accent-soft, color: $accent-ink),
+    global-registration: (border: #cbd9e8, background: #e5edf7, color: #385878),
+    local-block: (border: #ead3c1, background: #f7e8dc, color: #815438),
+    global-block: (border: #e4c9cc, background: #f3e0e2, color: #82474d),
+    lock: (border: #d8cce8, background: #eee7f6, color: #644d80),
+    upload: (border: #e8dcc1, background: #f7f0df, color: #80643b)
+);
+
+$date-button-levels: (
+    0: (opacity: 0.45, scale: 0.82),
+    1: (opacity: 0.72, scale: 0.92),
+    2: (opacity: 1, scale: 1),
+    3: (opacity: 0.72, scale: 0.92),
+    4: (opacity: 0.45, scale: 0.82)
+);
+
+@mixin focus-ring($radius: null) {
+    @if $radius {
+        border-radius: $radius;
+    }
+
+    outline: 2px solid $accent;
+    outline-offset: 2px;
+}
+
 .edit-timeline-page {
-    --timeline-heading-height: 3rem;
-    --timeline-entry-height: 4rem;
-    --timeline-gap-height: 2rem;
+    --timeline-heading-height: 2.5rem;
+    --timeline-entry-height: 3.25rem;
+    --timeline-gap-height: 1.1rem;
 
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 11rem;
+    grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr) minmax(6rem, 9rem);
     align-items: start;
-    gap: 1rem;
+    gap: 0.75rem;
     min-height: 100%;
-    padding: 0.75rem 0 5rem;
+    padding: 0.5rem 0 3rem;
+}
+
+#tab-content:has(.edit-timeline-page) {
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+.edit-timeline-legend,
+.edit-timeline-navigation {
+    position: sticky;
+    top: 50%;
+    align-self: start;
+    max-height: 70vh;
+    overflow: hidden auto;
+    scrollbar-width: thin;
+    scrollbar-color: $border transparent;
+    transform: translateY(-50%);
+}
+
+.edit-timeline-legend {
+    padding: 0.65rem;
+    border: 1px solid $border;
+    border-radius: 12px;
+    background: $surface;
+    box-shadow: 0 2px 8px rgba($shadow-color, 0.04);
+
+    &[hidden] {
+        display: none;
+    }
+}
+
+.edit-timeline-legend-title {
+    margin: 0 0 0.5rem;
+    color: $accent-ink;
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+
+.edit-timeline-legend-list {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.edit-timeline-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    color: $text;
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
+}
+
+.edit-timeline-swatch {
+    appearance: none;
+    flex: 0 0 0.8rem;
+    width: 0.8rem;
+    height: 0.8rem;
+    padding: 0;
+    border: 1px solid rgba(53, 66, 58, 0.12);
+    border-radius: 3px;
+    background: var(--user-color);
+    cursor: pointer;
+    transition: opacity $transition;
+
+    &.is-hidden {
+        opacity: 0.35;
+    }
+
+    &:focus-visible {
+        @include focus-ring;
+    }
+}
+
+.edit-timeline-refresh-colors {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    margin-top: 0.75rem;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid $border;
+    border-radius: 7px;
+    background: $surface-muted;
+    color: $accent-ink;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color $transition, background-color $transition;
+
+    &:hover {
+        border-color: $accent;
+        background: $accent-soft;
+    }
+
+    &:focus-visible {
+        @include focus-ring;
+    }
+}
+
+.edit-timeline-refresh-icon {
+    display: inline-block;
+    font-size: 1.1rem;
+    line-height: 0.8;
+
+    &.rotating {
+        animation: timeline-refresh-rotation 450ms ease;
+    }
+}
+
+@keyframes timeline-refresh-rotation {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .edit-timeline-days {
     min-width: 0;
 }
 
+.edit-timeline-empty {
+    display: grid;
+    min-height: 45vh;
+    place-items: center;
+    margin: 0;
+    padding: 2rem;
+    color: $muted;
+    font-size: 1rem;
+    text-align: center;
+}
+
 .edit-timeline-day {
     overflow: hidden;
+    border-bottom: 1px solid $border;
 }
 
 .edit-timeline-date {
@@ -26,32 +190,39 @@
     align-items: center;
     justify-content: space-between;
     height: var(--timeline-heading-height);
-    padding: 0 0.75rem;
+    padding: 0 0.6rem;
     margin: 0;
     color: $accent-ink;
-    font-size: 1rem;
+    font-size: 0.92rem;
     font-weight: 650;
 }
 
 .edit-timeline-entry {
     display: grid;
-    grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(11rem, 0.8fr) minmax(0, 1.2fr);
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.55rem;
     height: var(--timeline-entry-height);
-    padding: 0.4rem 0.75rem;
+    padding: 0.25rem 0.6rem;
+    border-left: 3px solid var(--user-color, $border);
+    background: $surface;
+
+    &:nth-of-type(even) {
+        background: $surface-muted;
+    }
 }
 
 .edit-timeline-meta,
 .edit-timeline-page-links {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.45rem;
     min-width: 0;
 }
 
 .edit-timeline-timestamp,
 .edit-timeline-username,
+.edit-timeline-legend-username,
 .edit-timeline-project,
 .edit-timeline-title {
     color: $accent-ink;
@@ -62,9 +233,7 @@
     }
 
     &:focus-visible {
-        border-radius: 2px;
-        outline: 2px solid $accent;
-        outline-offset: 2px;
+        @include focus-ring(2px);
     }
 }
 
@@ -84,12 +253,44 @@
 
 .edit-timeline-username {
     color: $muted;
+    font-weight: 600;
+
+    &::before {
+        display: inline-block;
+        width: 0.5rem;
+        height: 0.5rem;
+        margin-right: 0.3rem;
+        border-radius: 50%;
+        background: var(--user-color, $accent);
+        content: "";
+        vertical-align: 0.02rem;
+    }
 }
 
 .edit-timeline-page-links {
     overflow: hidden;
     font-size: 0.82rem;
     white-space: nowrap;
+}
+
+.edit-timeline-kind {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid $border;
+    border-radius: 999px;
+    background: $surface;
+    color: $muted;
+    font-size: 0.65rem;
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+@each $kind, $colors in $kind-colors {
+    .edit-timeline-entry--#{$kind} .edit-timeline-kind {
+        border-color: map.get($colors, border);
+        background: map.get($colors, background);
+        color: map.get($colors, color);
+    }
 }
 
 .edit-timeline-project {
@@ -118,48 +319,44 @@
     align-items: center;
     gap: 0.65rem;
     height: var(--timeline-gap-height);
-    padding: 0 0.75rem 0 1.4rem;
+    padding: 0 0.6rem 0 1rem;
     color: $muted;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-variant-numeric: tabular-nums;
-}
 
-.edit-timeline-gap::before,
-.edit-timeline-gap::after {
-    flex: 1;
-    border-top: 1px dotted $muted;
-    content: "";
+    &::before,
+    &::after {
+        flex: 1;
+        border-top: 1px dotted $muted;
+        content: "";
+    }
 }
 
 .edit-timeline-date-gap {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 2.5rem;
+    height: 2rem;
     color: $accent-ink;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-variant-numeric: tabular-nums;
-}
 
-.edit-timeline-date-gap span {
-    padding: 0.25rem 0.7rem;
-    border: 1px solid $border;
-    border-radius: 999px;
-    background: $surface-muted;
+    span {
+        padding: 0.25rem 0.7rem;
+        border: 1px solid $border;
+        border-radius: 999px;
+        background: $surface-muted;
+    }
 }
 
 .edit-timeline-navigation {
-    position: sticky;
-    top: 50%;
     display: grid;
-    align-self: start;
-    gap: 0.35rem;
-    padding: 0.5rem;
+    gap: 0.2rem;
+    padding: 0.35rem;
     border: 1px solid $border;
     border-radius: 12px;
     background: rgba(255, 254, 251, 0.94);
-    box-shadow: 0 2px 8px rgba(54, 72, 54, 0.06);
-    transform: translateY(-50%);
+    box-shadow: 0 2px 8px rgba($shadow-color, 0.06);
 
     &[hidden] {
         display: none;
@@ -169,7 +366,7 @@
 .edit-timeline-date-button {
     overflow: hidden;
     min-width: 0;
-    padding: 0.5rem 0.3rem;
+    padding: 0.4rem 0.3rem;
     border: 1px solid transparent;
     border-radius: 7px;
     background: transparent;
@@ -195,38 +392,28 @@
         font-weight: 650;
     }
 
-    &.position-0,
-    &.position-4 {
-        opacity: 0.45;
-        transform: scale(0.82);
-    }
-
-    &.position-1,
-    &.position-3 {
-        opacity: 0.72;
-        transform: scale(0.92);
-    }
-
-    &.position-2 {
-        opacity: 1;
-        transform: scale(1);
+    @each $position, $level in $date-button-levels {
+        &.position-#{$position} {
+            opacity: map.get($level, opacity);
+            transform: scale(map.get($level, scale));
+        }
     }
 }
 
 @media (max-width: 760px) {
     .edit-timeline-page {
-        grid-template-columns: minmax(0, 1fr) 7rem;
-        gap: 0.5rem;
+        grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr) minmax(5rem, 6.5rem);
+        gap: 0.4rem;
     }
 
     .edit-timeline-entry {
         grid-template-columns: minmax(0, 1fr);
         align-content: center;
-        gap: 0.3rem;
+        gap: 0.2rem;
     }
 
+    .edit-timeline-legend,
     .edit-timeline-navigation {
-        top: 50%;
         padding: 0.3rem;
     }
 
@@ -235,18 +422,32 @@
     }
 }
 
-#tab-content:has(.edit-timeline-page) {
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar {
-        display: none;
-    }
-}
-
 @media (max-width: 460px) {
     .edit-timeline-page {
-        grid-template-columns: minmax(0, 1fr) 5.5rem;
-        gap: 0.3rem;
+        grid-template-columns: minmax(4rem, 5rem) minmax(0, 1fr) minmax(4rem, 5rem);
+        gap: 0.2rem;
+    }
+
+    .edit-timeline-legend-title {
+        font-size: 0.75rem;
+    }
+
+    .edit-timeline-legend-item {
+        gap: 0.2rem;
+        font-size: 0.62rem;
+    }
+
+    .edit-timeline-swatch {
+        flex-basis: 0.55rem;
+        width: 0.55rem;
+        height: 0.55rem;
+    }
+
+    .edit-timeline-refresh-colors {
+        flex-wrap: wrap;
+        gap: 0.2rem;
+        padding: 0.3rem;
+        font-size: 0.58rem;
     }
 
     .edit-timeline-entry {
@@ -256,7 +457,7 @@
 
     .edit-timeline-meta,
     .edit-timeline-page-links {
-        gap: 0.35rem;
+        gap: 0.25rem;
     }
 
     .edit-timeline-timestamp,
@@ -265,10 +466,17 @@
     .edit-timeline-title {
         font-size: 0.68rem;
     }
+
+    .edit-timeline-kind {
+        padding: 0.1rem 0.3rem;
+        font-size: 0.58rem;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .edit-timeline-date-button {
+    .edit-timeline-date-button,
+    .edit-timeline-refresh-icon {
         transition: none;
+        animation: none !important;
     }
 }
