@@ -18,10 +18,10 @@ if (CALLBACK_RATE_LIMIT_MAX <= 0 || !Number.isFinite(CALLBACK_RATE_LIMIT_MAX))
     throw new Error("Callback rate limit max must be a positive finite number");
 
 const TEAPOT = String.raw`
-    (
-    )  (
-    (   ) )
-    ) ( (
+     (
+      )  (
+     (   ) )
+      ) ( (
     _______)_
 .-'         '-.
 |   HTTP: 418   |
