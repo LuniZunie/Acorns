@@ -27,7 +27,7 @@ npm install
 ### Setup
 
 ```bash
-echo -e "PORT=3000\nCLIENT=your_client_id" > .env
+echo -e "TEAPOT=0\nPORT=3000\nCLIENT=your_client_id" > .env
 ```
 
 Replace `your_client_id` with the `Client ID` you obtained from the OAuth consumer.

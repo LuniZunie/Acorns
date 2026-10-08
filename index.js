@@ -17,6 +17,18 @@ const CALLBACK_RATE_LIMIT_MAX = 3; // max /callback requests per client IP, per 
 if (CALLBACK_RATE_LIMIT_MAX <= 0 || !Number.isFinite(CALLBACK_RATE_LIMIT_MAX))
     throw new Error("Callback rate limit max must be a positive finite number");
 
+const TEAPOT = String.raw`
+    (
+    )  (
+    (   ) )
+    ) ( (
+    _______)_
+.-'         '-.
+|   HTTP: 418   |
+| I'm a teapot. |
+|_______________|
+`.replace(/(^\n+|\n+$)/g, "");
+
 // caches
 const callbackRateLimitCache = new TempMap(CALLBACK_RATE_LIMIT_WINDOW);
 const OAuthCallbackCache = new TempMap(Time.minutes(5)); // cache state callbacks with a 5-minute timeout
@@ -38,16 +50,41 @@ const isCallbackRateLimited = (function(ip) {
 const sitematrix = { };
 let siteMatrixJson = JSON.stringify(sitematrix);
 
-const updateSiteMatrix = (function() { // gets a list of all mediawiki sites
-    fetch(`https://www.mediawiki.org/w/api.php`, {
-        method: "POST",
-        headers: {
-            "Api-User-Agent": "Acorns-Server/1.0 (https://github.com/LuniZunie/Acorns)",
-        },
-        body: new URLSearchParams({ action: "sitematrix", format: "json", formatversion: "2" })
-    })
-        .then(response => response.json())
-        .then(data => {
+const retryAfterMilliseconds = response => {
+    const retryAfter = response.headers.get("Retry-After");
+    if (retryAfter === null) return null;
+
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds))
+        return seconds >= 0 ? seconds * 1000 : null;
+
+    const retryAt = Date.parse(retryAfter);
+    return Number.isNaN(retryAt) ? null : Math.max(0, retryAt - Date.now());
+};
+
+let siteMatrixRetryAttempt = 0;
+const updateSiteMatrix = async function() { // gets a list of all mediawiki sites
+    let nextUpdateDelay = Time.minutes(30);
+
+    try {
+        const response = await fetch(`https://www.mediawiki.org/w/api.php`, {
+            method: "POST",
+            headers: {
+                "Api-User-Agent": "Acorns-Server/1.0 (https://github.com/LuniZunie/Acorns)",
+            },
+            body: new URLSearchParams({ action: "sitematrix", format: "json", formatversion: "2" })
+        });
+
+        if (response.status === 429) {
+            nextUpdateDelay = retryAfterMilliseconds(response)
+                ?? Math.min(1000 * 2 ** siteMatrixRetryAttempt, Time.minutes(5));
+            siteMatrixRetryAttempt = Math.min(siteMatrixRetryAttempt + 1, 9);
+            console.warn(`MediaWiki API rate limited; retrying in ${Math.ceil(nextUpdateDelay / 1000)} seconds`);
+        } else {
+            if (!response.ok)
+                throw new Error(`MediaWiki API request failed with status ${response.status}`);
+
+            const data = await response.json();
             const temp = { };
 
             const matrix = data.sitematrix ?? { };
@@ -60,12 +97,16 @@ const updateSiteMatrix = (function() { // gets a list of all mediawiki sites
 
             Object.assign(sitematrix, temp);
             siteMatrixJson = JSON.stringify(sitematrix);
-        })
-        .catch(error => console.error(error));
-});
+            siteMatrixRetryAttempt = 0;
+        }
+    } catch (error) {
+        console.error(error);
+    }
+
+    setTimeout(updateSiteMatrix, nextUpdateDelay);
+};
 
 updateSiteMatrix();
-setInterval(updateSiteMatrix, Time.minutes(30)); // update every 30 minutes
 
 // server
 const PORT = parseInt(process.env.PORT, 10) || 8000;
@@ -89,6 +130,11 @@ const MIME_TYPES = {
 };
 
 const server = createServer(async (req, res) => {
+    if (process.env.TEAPOT === "1") {
+        res.writeHead(418, { "Content-Type": "text/plain; charset=utf-8" });
+        return res.end(TEAPOT);
+    }
+
     if (req.method !== "GET" && req.method !== "HEAD") {
         res.writeHead(405, { Allow: "GET, HEAD" });
         return res.end("Method Not Allowed");
@@ -170,6 +216,8 @@ const server = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server });
 wss.on("connection", ws => {
+    if (process.env.TEAPOT === "1") return ws.close();
+
     const state = crypto.randomUUID();
     ws.on("message", data => {
         const str = data.toString().trim();
