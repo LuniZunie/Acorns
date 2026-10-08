@@ -117,7 +117,7 @@ export function AggregateLinks(results, mode = LINK_MODE_DOMAIN) {
             group.additions++;
             if (account) group.accounts.add(account);
             if (edit.title) group.pages.add(edit.title);
-            group.edits.push({ ...edit, user: account, project, domain, link });
+            group.edits.push({ ...edit, user: account, project, domain, link, date: new Date(edit.timestamp).valueOf() });
         }
     }
 
@@ -207,12 +207,12 @@ const createLinkItem = link => {
 
     const details = create("div", "links-edit-list");
     details.hidden = true;
-    details.append(...link.edits.map(createEditRow));
+    details.append(...link.edits.sort((a, b) => a.date - b.date).map(createEditRow));
 
     const title = create("button", "link-button");
     title.type = "button";
     title.setAttribute("aria-expanded", "false");
-    title.append(create("span", "link-label", link.label), create("span", "link-chevron", "▾"));
+    title.append(create("span", "link-chevron", "▾"), create("span", "link-label", link.label));
 
     const breakdown = create("div", "link-breakdown");
     breakdown.append(

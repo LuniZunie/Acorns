@@ -172,7 +172,6 @@ $switch-padding: 0.25rem;
 
 .link-item-header {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem 1rem;
@@ -207,6 +206,7 @@ $switch-padding: 0.25rem;
     transition: transform 180ms ease;
     -webkit-user-select: none;
     user-select: none;
+    float: right;
 }
 
 .link-item.expanded .link-chevron {
