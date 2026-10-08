@@ -2,12 +2,19 @@ import { $ } from "../helpers/query-selector.js";
 import { Text } from "../helpers/text.js";
 import { Time } from "../helpers/time.js";
 import {
-    COLOR_SEED_CANDIDATES,
-    GetUserColorSeed,
     SetUserColorSeed,
     StateUserColorSeed,
     UserColor
 } from "../helpers/username-to-color.js";
+import { PickColorSeed } from "../helpers/pick-color-seed.js";
+import {
+    GetContributionsURL,
+    GetDiffURL,
+    GetGlobalContributionsURL,
+    GetLogURL,
+    GetOrigin,
+    GetPageURL
+} from "../helpers/wiki-urls.js";
 
 const longGap = Time.minutes(30);
 const SCROLL_SETTLE_DELAY = 140;
@@ -48,7 +55,6 @@ const hiddenUsers = new Set();
 
 const startOfDay = timestamp => Math.floor(timestamp / Time.days(1)) * Time.days(1);
 const formatDate = timestamp => dateFormatter.format(new Date(timestamp));
-const encodeTitle = title => encodeURIComponent(title.replaceAll(" ", "_"));
 
 function create(tag, className, textContent) {
     const $element = document.createElement(tag);
@@ -64,15 +70,6 @@ function createLink(className, href, textContent, title) {
     $link.rel = "noopener noreferrer";
     if (title !== undefined) $link.title = title;
     return $link;
-}
-
-function getContributionsURL(project, username) {
-    const origin = new URL(`https://${project}`).origin;
-    return new URL(`/wiki/Special:Contributions/${encodeTitle(username)}`, origin).href;
-}
-
-function getGlobalContributionsURL(username) {
-    return new URL(`/wiki/Special:GlobalContributions/${encodeTitle(username)}`, "https://meta.wikimedia.org").href;
 }
 
 export function RenderTimeline(data, requestedDate) {
@@ -157,7 +154,7 @@ export function RenderTimeline(data, requestedDate) {
     }
 
     function refreshColors() {
-        SetUserColorSeed(pickColorSeed(users));
+        SetUserColorSeed(PickColorSeed(users));
         StateUserColorSeed();
 
         for (const user of users) user.color = UserColor(user.name);
@@ -288,7 +285,7 @@ export function RenderTimeline(data, requestedDate) {
             $button.textContent = label;
             $button.setAttribute("aria-current", index === selectedIndex ? "date" : "false");
             $button.setAttribute("aria-label", `Show ${label}`);
-            $navigation.appendChild($button); // re-appending keeps the buttons in order
+            $navigation.appendChild($button);
         }
 
         for (const [ index, $button ] of $$dateButtons) {
@@ -432,7 +429,7 @@ function createTimelineLegend(users, onToggle) {
 
         const $username = createLink(
             "edit-timeline-legend-username",
-            user.home ? getContributionsURL(user.home, user.name) : getGlobalContributionsURL(user.name),
+            user.home ? GetContributionsURL(user.home, user.name) : GetGlobalContributionsURL(user.name),
             user.name,
             user.home
                 ? `View ${user.name}'s contributions on their home wiki`
@@ -454,43 +451,6 @@ function createTimelineLegend(users, onToggle) {
     $legend.appendChild($refresh);
 
     return $legend;
-}
-
-function getPaletteDistance(users, seed) {
-    const hues = users.map(user => {
-        const match = UserColor(user.name, seed).match(/^hsl\((\d+)/);
-        if (!match) throw new Error(`Could not read generated color for "${user.name}".`);
-        return Number(match[1]);
-    });
-
-    let minimumDistance = Infinity;
-    for (let i = 0; i < hues.length; i++)
-        for (let j = i + 1; j < hues.length; j++) {
-            const difference = Math.abs(hues[i] - hues[j]);
-            minimumDistance = Math.min(minimumDistance, difference, 360 - difference);
-        }
-
-    return minimumDistance;
-}
-
-function pickColorSeed(users) {
-    const currentSeed = GetUserColorSeed();
-    const candidates = new Set();
-    while (candidates.size < COLOR_SEED_CANDIDATES) {
-        const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-        if (seed !== currentSeed) candidates.add(seed);
-    }
-
-    let best;
-    let greatestDistance = -Infinity;
-    for (const candidate of candidates) {
-        const distance = getPaletteDistance(users, candidate);
-        if (distance > greatestDistance) {
-            best = candidate;
-            greatestDistance = distance;
-        }
-    }
-    return best;
 }
 
 const getBlockLabel = (unblock, reblock, scope) => `${scope} ${unblock ? "unblock" : reblock ? "reblock" : "block"}`;
@@ -585,11 +545,11 @@ function countLongGaps(entries) {
 }
 
 function createEntry(entry) {
-    const origin = new URL(`https://${entry.project}`).origin;
+    const { project, username } = entry;
 
     const $article = create("article", `edit-timeline-entry edit-timeline-entry--${entry.kind}`);
-    $article.dataset.username = entry.username;
-    $article.style.setProperty("--user-color", UserColor(entry.username));
+    $article.dataset.username = username;
+    $article.style.setProperty("--user-color", UserColor(username));
 
     const $time = create("time");
     $time.dateTime = entry.timestampText;
@@ -597,15 +557,9 @@ function createEntry(entry) {
 
     let $timestamp;
     if (entry.kind === "edit") {
-        const diffURL = new URL("/w/index.php", origin);
-        diffURL.searchParams.set("diff", entry.revid);
-        diffURL.searchParams.set("oldid", entry.parentid);
-        $timestamp = createLink("edit-timeline-timestamp", diffURL.href, undefined, entry.timestampText);
+        $timestamp = createLink("edit-timeline-timestamp", GetDiffURL(project, entry.revid, entry.parentid), undefined, entry.timestampText);
     } else if (entry.logid !== undefined) {
-        const logURL = new URL("/w/index.php", origin);
-        logURL.searchParams.set("title", "Special:Log");
-        logURL.searchParams.set("logid", entry.logid);
-        $timestamp = createLink("edit-timeline-timestamp", logURL.href, undefined, `View ${entry.label.toLowerCase()} log entry`);
+        $timestamp = createLink("edit-timeline-timestamp", GetLogURL(project, entry.logid), undefined, `View ${entry.label.toLowerCase()} log entry`);
     } else {
         $timestamp = create("span", "edit-timeline-timestamp");
         $timestamp.title = entry.timestampText;
@@ -615,7 +569,7 @@ function createEntry(entry) {
     const $meta = create("div", "edit-timeline-meta");
     $meta.append(
         $timestamp,
-        createLink("edit-timeline-username", getContributionsURL(entry.project, entry.username), entry.username)
+        createLink("edit-timeline-username", GetContributionsURL(project, username), username)
     );
 
     const title = entry.title || entry.label || "Activity";
@@ -625,9 +579,9 @@ function createEntry(entry) {
     const $pageDetails = create("div", "edit-timeline-page-links");
     $pageDetails.append(
         create("span", "edit-timeline-kind", entry.label || "Edit"),
-        createLink("edit-timeline-project", origin, entry.project),
+        createLink("edit-timeline-project", GetOrigin(project), project),
         $separator,
-        createLink("edit-timeline-title", new URL(`/wiki/${encodeTitle(title)}`, origin).href, title, title)
+        createLink("edit-timeline-title", GetPageURL(project, title), title, title)
     );
 
     $article.append($meta, $pageDetails);

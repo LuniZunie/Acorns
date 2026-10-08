@@ -7,8 +7,6 @@ function mix32(value) {
     return value >>> 0;
 }
 
-export const COLOR_SEED_CANDIDATES = 100;
-
 export function SetUserColorSeed(seed) {
     self.seed = parseInt(seed, 10) || 0;
 }

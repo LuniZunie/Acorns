@@ -108,14 +108,14 @@ const tickProgress = now => {
     renderProgress();
     progressFrame = progressShown === progressTarget ? null : requestAnimationFrame(tickProgress);
 };
-const setProgress = (value, instant = false) => {
+const setProgress = (value, instant = false, force = false) => {
     progressTarget = value;
     if (instant) {
         if (progressFrame !== null) cancelAnimationFrame(progressFrame);
         progressFrame = null;
         progressShown = value;
         renderProgress();
-    } else if (progressFrame === null && progressShown !== value) {
+    } else if (progressFrame === null && (progressShown !== value || force)) {
         progressLast = performance.now();
         progressFrame = requestAnimationFrame(tickProgress);
     }
@@ -222,7 +222,7 @@ Promise.all([
                         };
                     }
 
-                    setProgress(1);
+                    setProgress(1, undefined, true);
                 } break;
                 case "error": {
                     console.error(data);
@@ -233,7 +233,7 @@ Promise.all([
 
                         $retry.classList.remove("hidden");
                     };
-                    setProgress(1);
+                    setProgress(1, undefined, true);
                 } break;
             }
         });

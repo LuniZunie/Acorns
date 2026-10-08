@@ -3,6 +3,7 @@ import { $, $$ } from "../helpers/query-selector.js";
 import { RenderTimecards } from "../pages/timecards.js";
 import { RenderCalendar } from "../pages/calendar.js";
 import { RenderTimeline } from "../pages/timeline.js";
+import { RenderLinks } from "../pages/links.js";
 
 export function LoadResults(results) {
     self.results = results;
@@ -11,7 +12,7 @@ export function LoadResults(results) {
 }
 export function ChangeTab(tab, circular = false) {
     const state = window.history.state ?? { };
-    if (state.tab !== tab) delete state.data;
+    if (state.tab !== tab && !String(state.data ?? "").startsWith("links:")) delete state.data;
 
     const $tab = $(`#tabs > .tab-button:not(.hidden)[data-tab="${tab}"]`);
     if (!$tab) {
@@ -33,6 +34,7 @@ export function ChangeTab(tab, circular = false) {
 }
 
 function LoadTabContent(tab) {
+    const state = window.history.state ?? { };
     switch (tab) {
         case "overview": {
 
@@ -41,12 +43,13 @@ function LoadTabContent(tab) {
             RenderTimecards(self.results);
         } break;
         case "calendar": {
-            const state = window.history.state ?? { };
             RenderCalendar(self.results, state.data);
         } break;
         case "timeline": {
-            const state = window.history.state ?? { };
             RenderTimeline(self.results, state.data);
+        } break;
+        case "links": {
+            RenderLinks(self.results, state.data);
         } break;
         default: console.warn(`Tab "${tab}" has no content to load`);
     }

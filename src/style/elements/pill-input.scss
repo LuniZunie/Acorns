@@ -43,6 +43,10 @@ $transition: 150ms ease;
         .text {
             cursor: not-allowed;
         }
+
+        .pill > .remove {
+            pointer-events: none;
+        }
     }
 }
 

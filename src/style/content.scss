@@ -84,13 +84,11 @@
 
 #tabs {
     --active-tab: 0;
-    --tab-count: 4;
+    --tab-count: 0;
 
     position: relative;
     display: flex;
-    flex: 0 0 auto;
-    width: min(100%, 480px);
-    margin: 0 auto;
+    width: 100%;
     border-bottom: 1px solid $border;
 
     &::after {

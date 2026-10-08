@@ -1,12 +1,13 @@
 import { $ } from "../helpers/query-selector.js";
 
 import {
-    COLOR_SEED_CANDIDATES,
-    GetUserColorSeed,
     SetUserColorSeed,
     StateUserColorSeed,
     UserColor,
 } from "../helpers/username-to-color.js";
+import { PickColorSeed } from "../helpers/pick-color-seed.js";
+import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
+
 import { Text } from "../helpers/text.js";
 
 const weekdays = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
@@ -30,7 +31,6 @@ const hiddenUsers = new Set();
 const dismissTooltips = () => dismissCalendarTooltips.forEach(dismiss => dismiss());
 const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const dayKey = (month, day) => `${month}-${day}`;
-const encodeTitle = title => encodeURIComponent(title.replaceAll(" ", "_"));
 
 function getOrCreate(map, key, createValue) {
     if (!map.has(key)) map.set(key, createValue());
@@ -51,15 +51,6 @@ function createLink(className, href, textContent, title) {
     $link.rel = "noopener noreferrer";
     if (title !== undefined) $link.title = title;
     return $link;
-}
-
-function getContributionsURL(project, username) {
-    const origin = new URL(`https://${project}`).origin;
-    return new URL(`/wiki/Special:Contributions/${encodeTitle(username)}`, origin).href;
-}
-
-function getGlobalContributionsURL(username) {
-    return new URL(`/wiki/Special:GlobalContributions/${encodeTitle(username)}`, "https://meta.wikimedia.org").href;
 }
 
 function createUTCDate(year, month, day) {
@@ -163,7 +154,7 @@ export function RenderCalendar(data, requestedYear) {
     $yearNavigation.scrollTop = getCenteredScrollTop(initialIndex);
 
     function refreshColors() {
-        SetUserColorSeed(pickColorSeed(calendar.users));
+        SetUserColorSeed(PickColorSeed(calendar.users));
         StateUserColorSeed();
         for (const user of calendar.users) user.color = UserColor(user.name);
 
@@ -254,7 +245,7 @@ export function RenderCalendar(data, requestedYear) {
 
             $currentTitle = $nextTitle;
             wheelLocked = false;
-            advanceYear(); // continue with any year requested meanwhile
+            advanceYear();
         };
 
         let remaining = $exiting.length + $entering.length;
@@ -379,15 +370,16 @@ function createLegend(users, onToggle) {
             onToggle(user);
         });
 
-        const $item = create("li", "calendar-legend-item");
         const $username = createLink(
             "calendar-legend-username",
-            user.home ? getContributionsURL(user.home, user.name) : getGlobalContributionsURL(user.name),
+            user.home ? GetContributionsURL(user.home, user.name) : GetGlobalContributionsURL(user.name),
             user.name,
             user.home
                 ? `View ${user.name}'s contributions on their home wiki`
                 : `View ${user.name}'s global contributions`
         );
+
+        const $item = create("li", "calendar-legend-item");
         $item.append($swatch, $username);
         $list.appendChild($item);
     }
@@ -402,43 +394,6 @@ function createLegend(users, onToggle) {
     $legend.appendChild($refresh);
 
     return $legend;
-}
-
-function getPaletteDistance(users, seed) {
-    const hues = users.map(user => {
-        const match = UserColor(user.name, seed).match(/^hsl\((\d+)/);
-        if (!match) throw new Error(`Could not read generated color for "${user.name}".`);
-        return Number(match[1]);
-    });
-
-    let minimumDistance = Infinity;
-    for (let i = 0; i < hues.length; i++)
-        for (let j = i + 1; j < hues.length; j++) {
-            const difference = Math.abs(hues[i] - hues[j]);
-            minimumDistance = Math.min(minimumDistance, difference, 360 - difference);
-        }
-
-    return minimumDistance;
-}
-
-function pickColorSeed(users) {
-    const currentSeed = GetUserColorSeed();
-    const candidates = new Set();
-    while (candidates.size < COLOR_SEED_CANDIDATES) {
-        const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-        if (seed !== currentSeed) candidates.add(seed);
-    }
-
-    let best;
-    let greatestDistance = -Infinity;
-    for (const candidate of candidates) {
-        const distance = getPaletteDistance(users, candidate);
-        if (distance > greatestDistance) {
-            best = candidate;
-            greatestDistance = distance;
-        }
-    }
-    return best;
 }
 
 function setDayColors($cell, colors, editCounts) {
@@ -510,7 +465,7 @@ function renderMonths(year, calendar) {
             $grid.appendChild($label);
         }
 
-        const offset = (monthStart.getUTCDay() + 6) % 7; // 67
+        const offset = (monthStart.getUTCDay() + 6) % 7;
         for (let i = 0; i < offset; i++) {
             const $blank = create("span", "calendar-day-spacer");
             $blank.setAttribute("aria-hidden", "true");
