@@ -1,18 +1,20 @@
+import { SITE_MATRIX } from "./data/sitematrix.js";
+
 import { $, $$ } from "./helpers/DOM.js";
 
+import { SetColorSeed } from "./helpers/color-seed.js";
 import { NormalizeUser } from "./helpers/normalize-user.js";
-import { SetUserColorSeed } from "./helpers/username-to-color.js";
 
 import { OAuth } from "./core/oauth.js";
 import { GetUserData } from "./core/get-user-data.js";
 import { LoadResults, ChangeTab } from "./core/content.js";
 
-const url = new URL(window.location.href);
-const state = window.history.state ?? { };
+const url = new URL(location.href);
+const state = history.state ?? { };
 
 if (url.searchParams.has("seed"))
-    state.seed = parseInt(url.searchParams.get("seed"), 10);
-SetUserColorSeed(state.seed || 0);
+    state.seed = Number.parseInt(url.searchParams.get("seed"), 10);
+SetColorSeed(state.seed || 0);
 
 const $users = $("#user-pill-input");
 $users.addEventListener("pills-changed", () => {
@@ -48,7 +50,7 @@ if (url.searchParams.has("data"))
 if (url.searchParams.has("submit"))
     state.submit = url.searchParams.get("submit") === "1";
 
-window.history.replaceState(state, "", `${window.location.origin}${window.location.pathname}`);
+history.replaceState(state, "", `${location.origin}${location.pathname}`);
 window.addEventListener("popstate", e => {
     if (e.state?.reload)
         location.reload();
@@ -62,7 +64,7 @@ const $cancel = $("#input-screen-cancel");
 const $progress = $("#input-screen-progress");
 const $progressBars = $$("path", $progress);
 
-const layoutProgress = () => {
+const layoutProgress = (() => {
     const card = $progress.parentElement;
     const { width: cw, height: ch } = card.getBoundingClientRect();
     const w = cw + 6, h = ch + 4;
@@ -73,7 +75,7 @@ const layoutProgress = () => {
     const left = `M${cx} ${o}H${o + r}A${r} ${r} 0 0 0 ${o} ${o + r}V${h - o - r}A${r} ${r} 0 0 0 ${o + r} ${h - o}H${cx}`;
     $progressBars[0].setAttribute("d", right);
     $progressBars[1].setAttribute("d", left);
-};
+});
 new ResizeObserver(layoutProgress).observe($progress.parentElement);
 const $status = $("#input-screen-status");
 const $credits = $("#credits");
@@ -81,7 +83,7 @@ const $loadingScreen = $("#app-loading-screen");
 const $loadingSkeleton = $(".loading-skeleton", $loadingScreen);
 const $loadingMessage = $("#app-loading-message");
 const $loadingError = $("#app-loading-error");
-$("#app-loading-reload").addEventListener("click", () => window.location.reload());
+$("#app-loading-reload").addEventListener("click", () => location.reload());
 
 let progressTarget = 0, progressShown = 0, progressFrame = null, progressLast = 0;
 let progressCalback = null;
@@ -123,7 +125,7 @@ const setProgress = (value, instant = false, force = false) => {
 
 Promise.all([
     new OAuth().then(async oauth => await oauth.authenticate() && oauth),
-    fetch(`${window.location.origin}/sitematrix`).then(res => res.json())
+    fetch(`${location.origin}/sitematrix`).then(res => res.json())
 ]).then(async function([ oauth, sitematrix ]) {
     {
         const suggestions = [ "*" ];
@@ -134,7 +136,7 @@ Promise.all([
             suggestions.push(key, value, `!${key}`, `!${value}`);
         }
 
-        sitematrix = temp;
+        Object.assign(SITE_MATRIX, temp);
         $projects.suggest(suggestions);
     }
 
@@ -146,8 +148,8 @@ Promise.all([
                 const exclude = normalized.startsWith("!");
 
                 let project = exclude ? normalized.slice(1) : normalized;
-                if (sitematrix.set.has(project)) project = project;
-                else if (sitematrix.map.has(project)) project = sitematrix.map.get(project);
+                if (SITE_MATRIX.set.has(project)) project = project;
+                else if (SITE_MATRIX.map.has(project)) project = SITE_MATRIX.map.get(project);
                 else return $child.remove();
 
                 $child.value = `${exclude ? "!" : ""}${project}`;
@@ -157,9 +159,9 @@ Promise.all([
 
     $submit.classList.remove("disabled");
     $submit.addEventListener("click", () => {
-        const state = window.history.state;
+        const state = history.state;
         state.submit = true;
-        window.history.replaceState(state, "");
+        history.replaceState(state, "");
 
         $users.disable();
         $projects.disable();
@@ -224,7 +226,7 @@ Promise.all([
                         };
                     }
 
-                    setProgress(1, void(0), true);
+                    setProgress(1, undefined, true);
                 } break;
                 case "error": {
                     error = true;
@@ -237,15 +239,15 @@ Promise.all([
                         $retry.classList.remove("hidden");
                     };
 
-                    setProgress(1, void(0), true);
+                    setProgress(1, undefined, true);
                 } break;
             }
         });
 
         $cancel.onclick = () => {
-            const state = window.history.state;
+            const state = history.state;
             state.submit = false;
-            window.history.replaceState(state, "");
+            history.replaceState(state, "");
 
             close();
 

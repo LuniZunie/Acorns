@@ -34,7 +34,7 @@ export class Text {
                 case Case.Pascal:
                     return text.split(/(?=[A-Z])/);
                 case Case.Snake:
-                    return text.split(/_/g);
+                    return text.split("_");
                 case Case.Split:
                     throw new TypeError("Split case is only used for output, not input");
                 default:
@@ -66,10 +66,8 @@ export class Text {
 
     #getPlural(plural) {
         if (plural ?? true === true) {
-            const temp = [ ...this.#single ];
-
-            const end = temp.length - 1;
-            temp[end] = (single => {
+            const temp = Array.from(this.#single);
+            temp[temp.length - 1] = (single => {
                 switch (single.toLowerCase()) {
                     // en
                     case "child": return `${single}ren`;
@@ -93,19 +91,17 @@ export class Text {
                         return `${single}s`;
                     }
                 }
-            })(this.#single[end]);
+            })(this.#single.at(-1));
 
             return temp;
         } else if (plural === false)
-            return [ ...this.#single ];
+            return Array.from(this.#single);
         else if (plural instanceof Text)
             return plural.case(Case.Split).get();
-        else
-            throw new TypeError("Invalid plural argument, must be boolean or Text instance");
+        else throw new TypeError("Invalid plural argument, must be boolean or Text instance");
     };
-    plural() {
-        this.#plural = this.#getPlural(...arguments);
-        return this;
+    plural(...args) {
+        return void(this.#plural = this.#getPlural(...args)) || this;
     }
 
     case(type = Case.Sentence) {
@@ -118,9 +114,7 @@ export class Text {
                 case Case.Title:
                     return text.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
                 case Case.Sentence:
-                    if (this.#inSentenceCase)
-                        return text.join(" ");
-
+                    if (this.#inSentenceCase) return text.join(" ");
                     let punctuation = true;
                     return text.map(word => {
                         let rtn = punctuation ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase();
@@ -135,8 +129,7 @@ export class Text {
                     return text.map(word => word.toLowerCase()).join("_");
                 case Case.Split:
                     return text;
-                default:
-                    throw new TypeError("Invalid case type, must be a Case value");
+                default: throw new TypeError("Invalid case type, must be a Case value");
             }
         };
 
@@ -149,7 +142,5 @@ export class Text {
         });
     };
 
-    get(n = 1) {
-        return this.case().get(n);
-    }
+    get(n = 1) { return this.case().get(n); }
 };

@@ -1,4 +1,4 @@
-export const NormalizeUser = user => {
+export const NormalizeUser = (function(user) {
     const temp = user.trim().replaceAll("_", " ").split(":").pop().trim();
     return `${temp.charAt(0).toUpperCase()}${temp.slice(1)}`;
-};
+});

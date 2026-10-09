@@ -18,18 +18,18 @@ for (const ch of "\n[]{}\\/<>#|:") STOP[ch.charCodeAt(0)] = 1;
 const SK = new Uint8Array(105);
 SK[91] = SK[46] = SK[104] = SK[72] = 1;   // [ . h H
 
-const IMG_LEN = [7, 9, 8];
+const IMG_LEN = [ 7, 9, 8 ];
 
 // JS String.prototype.trim() whitespace
-const isWs = c =>
+const IsWs = c =>
     c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 0x1680 ||
     (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 ||
     c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
 
 // trim + "_" -> " " with a single slice
-const clean = (s, a, b) => {
-    while (a < b && isWs(s.charCodeAt(a))) a++;
-    while (b > a && isWs(s.charCodeAt(b - 1))) b--;
+const Clean = (s, a, b) => {
+    while (a < b && IsWs(s.charCodeAt(a))) a++;
+    while (b > a && IsWs(s.charCodeAt(b - 1))) b--;
     const r = s.slice(a, b);
     return r.indexOf("_") < 0 ? r : r.replaceAll("_", " ");
 };
@@ -37,7 +37,7 @@ const clean = (s, a, b) => {
 // accepted extensions starting at p (4 or 5), or 0.
 // 4: tif png gif jpg xcf pdf mid ogg ogv oga svg wav mp3 mpg
 // 5: tiff jpeg webp midi djvu flac opus webm mpeg
-const extLen = (s, p) => {
+const ExtLen = (s, p) => {
     const c2 = s.charCodeAt(p + 2), c3 = s.charCodeAt(p + 3);
     switch (s.charCodeAt(p + 1)) {
         case 116: // t: tif tiff
@@ -81,12 +81,12 @@ const extLen = (s, p) => {
     return 0;
 };
 
-const ParseWikitext = s => {
+export const ParseWikitext = s => {
     if (typeof s !== "string")
-        return { c: [], i: [], l: [], d: true };
+        return { c: [ ], i: [ ], l: [ ], d: true };
 
     const n = s.length;
-    const cats = [], imgs = [], lnks = [];
+    const cats = [ ], imgs = [ ], lnks = [ ];
 
     // per-scanner state: mode (0 = matching, 1 = collecting), match progress, text start
     let cm = 0, ci = 0, cs = 0;
@@ -104,7 +104,7 @@ const ParseWikitext = s => {
                     const e = s.charCodeAt(p + 1);
                     if (e === 116 || e === 84) break;
                 }
-                else if (extLen(s, p) !== 0) break;                            // only a real ".ext"
+                else if (ExtLen(s, p) !== 0) break;                            // only a real ".ext"
             }
             if (p >= n) break;
         }
@@ -114,7 +114,7 @@ const ParseWikitext = s => {
 
         // ---- "name=file.ext" ----
         if (c === 46) {
-            const L = extLen(s, p);
+            const L = ExtLen(s, p);
             if (L !== 0) {
                 for (let j = p - 1; j >= 0; j--) {
                     const d = s.charCodeAt(j);
@@ -129,7 +129,7 @@ const ParseWikitext = s => {
             if (lc === CAT[ci]) { if (++ci === 11) { ci = 0; cm = 1; cs = p + 1; } }
             else ci = lc === 91 ? (ci === 2 ? 2 : 1) : 0;
         } else if (c === 10) cm = 0;
-        else if (c === 93 || c === 124) { cats.push(clean(s, cs, p)); cm = 0; }
+        else if (c === 93 || c === 124) { cats.push(Clean(s, cs, p)); cm = 0; }
 
         // ---- [[file: / [[image: / [[media: ----
         if (im === 0) {
@@ -147,7 +147,7 @@ const ParseWikitext = s => {
                 else ii = lc === 91 ? 1 : 0;
             }
         } else if (c === 10) im = 0;
-        else if (c === 93 || c === 124) { imgs.push(clean(s, is, p)); im = 0; }
+        else if (c === 93 || c === 124) { imgs.push(Clean(s, is, p)); im = 0; }
 
         // ---- http:// / https:// ----
         if (lm === 0) {
@@ -161,7 +161,7 @@ const ParseWikitext = s => {
             if (nx === 8) { li = 0; lm = 1; lb = p + 1; }
             else if (nx < 0) { if (lc === 104) { li = 1; ls = p; } else li = 0; }
             else { if (li === 0) ls = p; li = nx; }
-        } else if (c < 128 ? LT[c] === 1 : isWs(c)) {
+        } else if (c < 128 ? LT[c] === 1 : IsWs(c)) {
             if (p > lb) lnks.push(s.slice(ls, p));
             lm = 0;
         }
@@ -172,5 +172,3 @@ const ParseWikitext = s => {
 
     return { c: cats, i: imgs, l: lnks, d: true };
 };
-
-export { ParseWikitext };

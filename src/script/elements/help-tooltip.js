@@ -2,8 +2,9 @@ import { $, $$ } from "../helpers/DOM.js";
 
 const $$widgets = Array.from($$(".help")).map($help => {
     const $button = $(".help-button", $help);
-    const tooltipId = $button?.getAttribute("aria-controls");
-    const $tooltip = tooltipId && $(`#${tooltipId}`);
+
+    const id = $button?.getAttribute("aria-controls");
+    const $tooltip = id && $(`#${id}`);
 
     if (!$button || !$tooltip)
         throw new Error("Each .help widget must have a .help-button and its controlled tooltip.");

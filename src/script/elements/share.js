@@ -6,7 +6,7 @@ let hideCopiedTooltipTimeout;
 
 $share.addEventListener("click", async () => {
     const state = history.state ?? { };
-    const url = new URL(`${window.location.origin}${window.location.pathname}`);
+    const url = new URL(`${location.origin}${location.pathname}`);
 
     if ("users" in state) url.searchParams.set("users", state.users.join(","));
     if ("projects" in state) url.searchParams.set("projects", state.projects.join(","));
@@ -17,15 +17,13 @@ $share.addEventListener("click", async () => {
 
     try {
         await navigator.clipboard.writeText(url.toString());
-    } catch (error) {
-        return console.error("Failed to copy share text to the clipboard.", error);
-    }
 
-    clearTimeout(hideCopiedTooltipTimeout);
-    $copied.setAttribute("aria-hidden", "false");
-    $copied.classList.add("visible");
-    hideCopiedTooltipTimeout = setTimeout(() => {
-        $copied.classList.remove("visible");
-        $copied.setAttribute("aria-hidden", "true");
-    }, 3000);
+        clearTimeout(hideCopiedTooltipTimeout);
+        $copied.setAttribute("aria-hidden", "false");
+        $copied.classList.add("visible");
+        hideCopiedTooltipTimeout = setTimeout(() => {
+            $copied.classList.remove("visible");
+            $copied.setAttribute("aria-hidden", "true");
+        }, 3000);
+    } catch (error) { console.error("Failed to copy share text to the clipboard.", error); }
 });

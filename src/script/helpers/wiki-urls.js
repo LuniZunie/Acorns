@@ -1,26 +1,25 @@
-const encodeTitle = title => encodeURIComponent(title.replaceAll(" ", "_"));
+const EncodeTitle = (function(title) { return encodeURIComponent(title.replaceAll(" ", "_")); });
 
-export const GetOrigin = project => new URL(`https://${project}`).origin;
+export const GetOrigin = (function(project) { return new URL(`https://${project}`).origin; });
+export const GetPageURL = (function(project, title) { return new URL(`/wiki/${EncodeTitle(title)}`, GetOrigin(project)).href; });
 
-export const GetPageURL = (project, title) =>
-    new URL(`/wiki/${encodeTitle(title)}`, GetOrigin(project)).href;
+export const GetContributionsURL = (function(project, username) {
+    return new URL(`/wiki/Special:Contributions/${EncodeTitle(username)}`, GetOrigin(project)).href;
+});
+export const GetGlobalContributionsURL = (function(project, username) {
+    return new URL(`/wiki/Special:GlobalContributions/${EncodeTitle(username)}`, "https://meta.wikimedia.org").href;
+});
 
-export const GetContributionsURL = (project, username) =>
-    new URL(`/wiki/Special:Contributions/${encodeTitle(username)}`, GetOrigin(project)).href;
-
-export const GetGlobalContributionsURL = username =>
-    new URL(`/wiki/Special:GlobalContributions/${encodeTitle(username)}`, "https://meta.wikimedia.org").href;
-
-export function GetDiffURL(project, revid, parentid) {
+export const GetDiffURL = (function(project, revid, parentid) {
     const url = new URL("/w/index.php", GetOrigin(project));
     url.searchParams.set("diff", revid);
     url.searchParams.set("oldid", parentid);
     return url.href;
-}
+});
 
-export function GetLogURL(project, logid) {
+export const GetLogURL = (function(project, logid) {
     const url = new URL("/w/index.php", GetOrigin(project));
     url.searchParams.set("title", "Special:Log");
     url.searchParams.set("logid", logid);
     return url.href;
-}
+});

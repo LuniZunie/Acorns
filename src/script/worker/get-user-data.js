@@ -1,7 +1,6 @@
 import { Time } from "../helpers/time.js";
 
-import { AddArrayToArray } from "../helpers/add-array-to-array.js";
-import { BatchArray } from "../helpers/batch-array.js";
+import { AddArrayToArray, BatchArray } from "../helpers/array.js";
 
 import { NormalizeUser } from "../helpers/normalize-user.js";
 import { ParseWikitext } from "../helpers/parse-wikitext.js";
@@ -176,7 +175,6 @@ function resolveProjects(projectRules, { codeByHost, hostByCode }) {
         const code = resolveCode(negate ? normalized.slice(1) : normalized);
         if (!code) continue;
 
-        // With "*" active we track exclusions, otherwise inclusions.
         const target = all ? exclude : include;
         if (negate === all) target.add(code);
         else target.delete(code);
@@ -321,9 +319,7 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
     let releaseLoginBarrier;
     const loginBarrier = new Promise(resolve => { releaseLoginBarrier = resolve; });
     let loginResponsesRemaining = users.length;
-    const initialLoginReturned = () => {
-        if (--loginResponsesRemaining === 0) releaseLoginBarrier();
-    };
+    const initialLoginReturned = () => { if (--loginResponsesRemaining === 0) releaseLoginBarrier(); };
 
     const fail = error => {
         if (finished) return;

@@ -34,7 +34,7 @@ const callbackRateLimitCache = new TempMap(CALLBACK_RATE_LIMIT_WINDOW);
 const OAuthCallbackCache = new TempMap(Time.minutes(5)); // cache state callbacks with a 5-minute timeout
 
 // main
-const base64url = str => str.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+const base64url = str => str.toString("base64").replaceAll("=", "").replaceAll("+", "-").replaceAll("/", "_");
 
 const isCallbackRateLimited = (function(ip) {
     let entry = callbackRateLimitCache.get(ip);

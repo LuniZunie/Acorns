@@ -1,17 +1,13 @@
-import { $, $$, $Create, $Text } from "../helpers/DOM.js";
-
-import {
-    SetUserColorSeed,
-    StateUserColorSeed,
-    UserColor,
-} from "../helpers/username-to-color.js";
-import { PickColorSeed } from "../helpers/pick-color-seed.js";
-import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
+import { $, $$, $Text, $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
 import { Weight } from "../helpers/math.js";
 
+import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
+import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
+
 const weekdays = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
+
 const MonthFormatter = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
 const DateFormatter = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 const NumberFormatter = new Intl.NumberFormat();
@@ -23,9 +19,9 @@ const MAX_HALF_FEATHER_ANGLE = 3;
 const hiddenUsers = new Set();
 
 const $$tooltips = new Map();
-const AddTooltip = (($cell, title, { edits, events }) => {
+const AddTooltip = (function($cell, title, { edits, events }) {
     let $tooltip;
-    const show = () => {
+    const show = (() => {
         if (!$tooltip) {
             $tooltip = $Create(
                 "div",
@@ -40,9 +36,9 @@ const AddTooltip = (($cell, title, { edits, events }) => {
                             className: "calendar-tooltip-content"
                         },
                         [
-                            ...(edits.length ? [ $Create("div", void(0), edits.join("\n")) ] : [ ]),
+                            ...(edits.length ? [ $Create("div", undefined, edits.join("\n")) ] : [ ]),
                             ...(edits.length & events.length ? [ $Create("hr", { className: "calendar-tooltip-divider" }) ] : [ ]),
-                            ...(events.length ? [ $Create("div", void(0), events.join("\n")) ] : [ ]),
+                            ...(events.length ? [ $Create("div", undefined, events.join("\n")) ] : [ ]),
                         ]
                     )
                 ]
@@ -54,11 +50,10 @@ const AddTooltip = (($cell, title, { edits, events }) => {
         $$tooltips.set($tooltip, $cell);
 
         $tooltip.classList.remove("hidden");
-
         $tooltip.ontransitionend = null;
-    };
+    });
 
-    const hide = () => {
+    const hide = (() => {
         if (!$tooltip) return;
 
         $tooltip.classList.add("hidden");
@@ -67,7 +62,7 @@ const AddTooltip = (($cell, title, { edits, events }) => {
             $tooltip.remove();
             $tooltip = null;
         };
-    };
+    });
 
     $cell.tabIndex = 0;
     $cell.addEventListener("mouseenter", show);
@@ -75,7 +70,8 @@ const AddTooltip = (($cell, title, { edits, events }) => {
     $cell.addEventListener("mouseleave", hide);
     $cell.addEventListener("blur", hide);
 });
-const PositionTooltip = (($tooltip, $cell) => {
+
+const PositionTooltip = (function($tooltip, $cell) {
     const rect = $cell.getBoundingClientRect();
     $tooltip.style.left = `${rect.left + rect.width / 2}px`;
     $tooltip.style.top = `calc(${rect.top}px - 0.5rem)`;
@@ -86,59 +82,43 @@ window.addEventListener("resize", () => {
         PositionTooltip($tooltip, $cell);
 });
 
-const getOrCreate = ((map, key, createValue) => {
-    if (!map.has(key)) map.set(key, createValue());
-    return map.get(key);
-});
-
-const CreateUTCDate = ((year, month, day) => {
+const CreateUTCDate = (function(year, month, day) {
     const date = new Date(0);
     date.setUTCFullYear(year, month, day);
     date.setUTCHours(0, 0, 0, 0);
     return date;
 });
 
-const getLockLabel = (({ params }) => {
-    if (params?.added?.includes("locked") || params?.["0"] === "locked") return "Lock";
-    if (params?.removed?.includes("locked") || params?.["1"] === "locked") return "Unlock";
-    return "Lock status change";
-});
-
-const getCalendarBlockLabel = ((block, scope, local = false) => {
-    const action = block.unblock ? "Unblock" : block.reblock ? "Reblock" : "Block";
-    return local ? `${action} (${scope})` : `${scope} ${action.toLowerCase()}`;
-});
-
-const GetDayBackground = (entries => {
-    const length = entries.length;
-    switch (length) {
+const GetDayBackground = (function(entries) {
+    const len = entries.length;
+    switch (len) {
         case 0: return { };
-        case 1: return { "--day-color": UserColor(entries[0][1]) };
+        case 1: return { "--day-color": SeededColor(entries[0][1]) };
         default: {
             const edits = [ ], colors = [ ];
-            for (let i = 0; i < length; i++) {
+            for (let i = 0; i < len; i++) {
                 const entry = entries[i];
                 edits.push(entry[0]);
-                colors.push(UserColor(entry[1]));
+                colors.push(SeededColor(entry[1]));
             }
 
             const angles = Weight(edits);
             const halfFeather = Math.min(MAX_HALF_FEATHER_ANGLE, Math.min(...angles) * 90);
 
             let boundary = 0;
-            const stops = [ `${colors[length - 1]} ${-halfFeather}deg, ${colors[0]} ${halfFeather}deg` ];
-            for (let i = 1; i < length; i++) {
+            const stops = [ `${colors.at(-1)} ${-halfFeather}deg, ${colors[0]} ${halfFeather}deg` ];
+            for (let i = 1; i < len; i++) {
                 boundary += angles[i - 1] * 360;
                 stops.push(`${colors[i - 1]} ${boundary - halfFeather}deg, ${colors[i]} ${boundary + halfFeather}deg`);
             }
-            stops.push(`${colors[length - 1]} ${360 - halfFeather}deg, ${colors[0]} ${360 + halfFeather}deg`);
+            stops.push(`${colors.at(-1)} ${360 - halfFeather}deg, ${colors[0]} ${360 + halfFeather}deg`);
 
             return { backgroundImage: `conic-gradient(from -90deg, ${stops.join(", ")})` };
         } break;
     }
 });
 
-function RenderYearPanel(year, users, activity, events, current = false) {
+const RenderYearPanel = (function(year, users, activity, events, current = false) {
     const visibleUsers = new Set();
     users.forEach(user => user.visible ? visibleUsers.add(user.name) : 0);
 
@@ -227,7 +207,7 @@ function RenderYearPanel(year, users, activity, events, current = false) {
                                         [
                                             [ "click", ($self, e) => {
                                                 $("#tabs > .tab-button[data-tab=\"timeline\"]")?.click();
-                                                $("#tab-content > .edit-timeline-page")?.goToDate(date, { instant: true });
+                                                $("#tab-content > .edit-timeline-page")?.goToDate(date);
                                             } ]
                                         ],
                                         $self => AddTooltip($self, DateFormatter.format(date), { edits: editDetails, events: eventDetails })
@@ -240,15 +220,16 @@ function RenderYearPanel(year, users, activity, events, current = false) {
             );
         })
     );
-}
+});
 
-export function RenderCalendar(data, requestedYear = self.rememberedYear) {
+
+export const RenderCalendar = (function($content, data, requestedYear = self.rememberedYear) {
     let oldest = Infinity, newest = -Infinity;
     const users = new Map();
     const activity = new Map(), events = new Map();
 
     {
-        const getDayBucket = (timestamp, byYear, createBucket) => {
+        const getDayBucket = ((timestamp, byYear, createBucket) => {
             const date = new Date(timestamp);
             if (Number.isNaN(date.getTime())) return null;
 
@@ -256,20 +237,25 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
             oldest = Math.min(oldest, year);
             newest = Math.max(newest, year);
 
-            const days = getOrCreate(byYear, year, () => new Map());
-            return {
-                date,
-                bucket: getOrCreate(days, `${date.getUTCMonth()}-${date.getUTCDate()}`, createBucket)
-            };
-        };
+            let days;
+            if (byYear.has(year)) days = byYear.get(year);
+            else byYear.set(year, days = new Map());
 
-        const addEvent = (username, timestamp, kind, label) => {
+            let bucket;
+            const key = `${date.getUTCMonth()}-${date.getUTCDate()}`;
+            if (days.has(key)) bucket = days.get(key);
+            else days.set(key, bucket = createBucket());
+
+            return { date, bucket }
+        });
+
+        const addEvent = ((username, timestamp, kind, label) => {
             const day = getDayBucket(timestamp, events, () => [ ]);
             day?.bucket.push({ username, kind, label, timestamp: day.date.getTime() });
-        };
+        });
 
         for (const user of data) {
-            users.set(user.name, { name: user.name, home: user.home, color: UserColor(user.name), visible: !hiddenUsers.has(user.name) });
+            users.set(user.name, { name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenUsers.has(user.name) });
             if (user.registration?.timestamp)
                 addEvent(user.name, user.registration.timestamp, "registration", "Global registration");
 
@@ -280,13 +266,22 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
                 }
 
                 for (const block of project.blocks || [ ])
-                    addEvent(user.name, block.timestamp, "local-block", getCalendarBlockLabel(block, project.code || project.project, true));
+                    addEvent(user.name, block.timestamp, "local-block", `${block.unblock ? "Unblock" : block.reblock ? "Reblock" : "Block"} (${project.code})`);
             }
 
             for (const block of user.blocks || [ ])
-                addEvent(user.name, block.timestamp, "global-block", getCalendarBlockLabel(block, "Global"));
+                addEvent(user.name, block.timestamp, "global-block", `Global ${block.unblock ? "unblock" : block.reblock ? "reblock" : "block"}`);
             for (const lock of user.locks || [ ])
-                addEvent(user.name, lock.timestamp, "lock", getLockLabel(lock));
+                addEvent(
+                    user.name,
+                    lock.timestamp,
+                    "lock",
+                    lock?.added?.includes("locked") || lock?.["0"] === "locked"
+                        ? "Lock"
+                        : lock?.removed?.includes("locked") || lock?.["1"] === "locked"
+                            ? "Unlock"
+                            : "Lock status change"
+                );
         }
 
         if (oldest === Infinity)
@@ -302,18 +297,17 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
         if (temp < 0) temp = years.length - 1;
         selectedIndex = queuedIndex = temp;
 
-        const state = window.history.state ?? { };
+        const state = history.state ?? { };
         year = self.rememberedYear = state.data = years[temp];
-        window.history.replaceState(state, "");
+        history.replaceState(state, "");
     }
 
-    const RefreshColors = (() => {
-        SetUserColorSeed(PickColorSeed(Array.from(users.values())));
-        StateUserColorSeed();
-        for (const [ key, value ] of users) value.color = UserColor(key);
-        for (const $el of $$("#tab-content *[data-username]"))
-            $el.style.setProperty("--user-color", UserColor($el.dataset.username));
-        for (const $el of $$("#tab-content *[data-color-data]")) {
+    const RefreshColors = (function() {
+        PickColorSeed(users.keys());
+        for (const [ key, value ] of users) value.color = SeededColor(key);
+        for (const $el of $$("*[data-username]", $content))
+            $el.style.setProperty("--user-color", SeededColor($el.dataset.username));
+        for (const $el of $$("*[data-color-data]", $content)) {
             $el.style.removeProperty("--day-color");
             $el.style.removeProperty("background-image");
             for (const [ property, styleValue ] of Object.entries(GetDayBackground(JSON.parse($el.dataset.colorData)))) {
@@ -325,10 +319,10 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
         }
     });
 
-    const AdvanceYear = (() => {
-        const $nav = $("#tab-content > .calendar-page > .calendar-nav");
-        const $yearWindow = $("#tab-content > .calendar-page > .calendar-main > .calendar-header > .calendar-year-window");
-        const $monthsWindow = $("#tab-content > .calendar-page > .calendar-main > .calendar-months-window");
+    const AdvanceYear = (function() {
+        const $nav = $(":scope > .calendar-page > .calendar-nav", $content);
+        const $yearWindow = $(":scope > .calendar-page > .calendar-main > .calendar-header > .calendar-year-window", $content);
+        const $monthsWindow = $(":scope > .calendar-page > .calendar-main > .calendar-months-window", $content);
 
         if (selectedIndex === queuedIndex)
             return void(transitionPending = false);
@@ -349,10 +343,10 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
         $yearWindow.appendChild($nextTitle);
         $monthsWindow.appendChild($nextPanel);
 
-        const $exiting = [ $currentPanel, $previousTitle ];
-        const $entering = [ $nextPanel, $nextTitle ];
-        for (const $element of $exiting) $element.classList.add(`exit-${direction}`);
-        for (const $element of $entering) $element.classList.add(`enter-${direction}`);
+        const $$exiting = [ $currentPanel, $previousTitle ];
+        const $$entering = [ $nextPanel, $nextTitle ];
+        for (const $el of $$exiting) $el.classList.add(`exit-${direction}`);
+        for (const $el of $$entering) $el.classList.add(`enter-${direction}`);
 
         $$(":scope > .calendar-nav-button", $nav).forEach(($button, i) => {
             $button.classList.toggle("active", i === selectedIndex);
@@ -370,23 +364,23 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
             $currentPanel.remove();
             $previousTitle.remove();
 
-            for (const $element of $entering) {
-                $element.classList.remove(`enter-${direction}`);
-                $element.classList.add("current");
+            for (const $el of $$entering) {
+                $el.classList.remove(`enter-${direction}`);
+                $el.classList.add("current");
             }
 
             wheelLocked = false;
 
-            const state = window.history.state ?? { };
+            const state = history.state ?? { };
             state.data = self.rememberedYear = years[selectedIndex];
-            window.history.replaceState(state, "");
+            history.replaceState(state, "");
 
             AdvanceYear();
         };
 
-        let remaining = $exiting.length + $entering.length;
-        for (const $element of [ ...$exiting, ...$entering ])
-            $element.addEventListener("animationend", () => { if (--remaining === 0) finish(); }, { once: true });
+        let remaining = $$exiting.length + $$entering.length;
+        for (const $el of $$exiting.concat($$entering))
+            $el.addEventListener("animationend", () => { if (--remaining === 0) finish(); }, { once: true });
 
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) finish();
         else setTimeout(finish, 360);
@@ -437,9 +431,9 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
                                     "",
                                     [
                                         [ "click", ($self, e) => {
-                                            $self.classList.toggle("hidden", user.visible = !user.visible);
-                                            $self.setAttribute("aria-pressed", String(user.visible))
-                                            $self.setAttribute("aria-label", $self.title = `${user.visible ? "Hide" : "Show"} ${user.name}`)
+                                            $self.classList.toggle("hidden", user.visible);
+                                            $self.setAttribute("aria-pressed", String(user.visible = !user.visible));
+                                            $self.setAttribute("aria-label", $self.title = `${user.visible ? "Hide" : "Show"} ${user.name}`);
 
                                             if (user.visible) hiddenUsers.delete(user.name);
                                             else hiddenUsers.add(user.name);
@@ -447,7 +441,9 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
                                             $$tooltips.keys().forEach($el => $el.remove());
                                             $$tooltips.clear();
 
-                                            $("#tab-content > .page > .main").replaceWith(RenderMain(data, year));
+                                            $(":scope > .calendar-page > .calendar-main > .calendar-months-window", $content).replaceChildren(
+                                                RenderYearPanel(year, users, activity.get(year), events.get(year), true)
+                                            );
                                         } ]
                                     ]
                                 ),
@@ -459,8 +455,8 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
                                         target: "_blank",
                                         rel: "noopener noreferrer",
                                         title: user.home
-                                            ? `View ${user.name}'s contributions on their home wiki`
-                                            : `View ${user.name}'s global contributions`
+                                            ? `Open ${user.name}'s home contributions`
+                                            : `Open ${user.name}'s global contributions`
                                     },
                                     user.name
                                 )
@@ -556,7 +552,7 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
         ],
         [
             [ "wheel", ($self, e) => {
-                if (window.innerWidth <= MOBILE_BREAKPOINT) return;
+                if (innerWidth <= MOBILE_BREAKPOINT) return;
                 if (e.target instanceof Element && e.target.closest(".legend")) return;
 
                 let delta = e.deltaY;
@@ -586,7 +582,7 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
                 if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
                 e.preventDefault();
 
-                queuedIndex = Math.max(0, Math.min(newestIndex, queuedIndex + (e.key === "ArrowDown" ? 1 : -1)));
+                queuedIndex = Math.max(0, Math.min(years.length - 1, queuedIndex + (e.key === "ArrowDown" ? 1 : -1)));
                 if (!transitionPending) AdvanceYear();
             } ]
         ],
@@ -596,4 +592,4 @@ export function RenderCalendar(data, requestedYear = self.rememberedYear) {
             $nav.scrollTop = $button.offsetTop - ($nav.clientHeight - $button.offsetHeight) / 2;
         }
     )
-}
+});

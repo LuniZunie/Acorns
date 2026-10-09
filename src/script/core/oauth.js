@@ -2,8 +2,8 @@ import { $ } from "../helpers/DOM.js";
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {
-    static #REDIRECT_URI = `${window.location.origin}/callback`;
-    static #WS_URL = `${window.location.protocol.replace("http", "ws")}//${window.location.host}`;
+    static #REDIRECT_URI = `${location.origin}/callback`;
+    static #WS_URL = `${location.protocol.replace("http", "ws")}//${location.host}`;
 
     #client;
 
@@ -74,7 +74,7 @@ export class OAuth {
                             });
                             const link = `https://meta.wikimedia.org/w/rest.php/oauth2/authorize?${params.toString()}`;
 
-                            tab = window.open(link);
+                            tab = open(link);
                             $("#auth-popup-link").href = link;
                             $("#auth-popup-blocker").classList.remove("hidden");
                             $("#auth-popup").classList.remove("hidden");

@@ -1,7 +1,8 @@
-import { $, $Create } from "../helpers/DOM.js";
-import { Text } from "../helpers/text.js";
+import { $Create } from "../helpers/DOM.js";
 
+import { Text } from "../helpers/text.js";
 import { Ratio, Sum } from "../helpers/math.js";
+
 import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
 
 const daysOfWeek = [ "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" ];
@@ -11,9 +12,9 @@ const hoursOfDay = Array.from({ length: 24 }, (_, hour) => String(hour).padStart
 const NumberFormatter = new Intl.NumberFormat();
 
 const $$tooltips = new Map();
-const AddTooltip = (($cell, title, content) => {
+const AddTooltip = (function($cell, title, content) {
     let $tooltip;
-    const show = () => {
+    const show = (() => {
         if (!$tooltip) {
             $tooltip = $Create(
                 "div",
@@ -32,11 +33,10 @@ const AddTooltip = (($cell, title, content) => {
         $$tooltips.set($tooltip, $cell);
 
         $tooltip.classList.remove("hidden");
-
         $tooltip.ontransitionend = null;
-    };
+    });
 
-    const hide = () => {
+    const hide = (() => {
         if (!$tooltip) return;
 
         $tooltip.classList.add("hidden");
@@ -45,7 +45,7 @@ const AddTooltip = (($cell, title, content) => {
             $tooltip.remove();
             $tooltip = null;
         };
-    };
+    });
 
     $cell.tabIndex = 0;
     $cell.addEventListener("mouseenter", show);
@@ -54,7 +54,7 @@ const AddTooltip = (($cell, title, content) => {
     $cell.addEventListener("blur", hide);
 });
 
-const PositionTooltip = (($tooltip, $cell) => {
+const PositionTooltip = (function($tooltip, $cell) {
     const rect = $cell.getBoundingClientRect();
     $tooltip.style.left = `${rect.left + rect.width / 2}px`;
     $tooltip.style.top = `calc(${rect.top}px - 0.5rem)`;
@@ -65,7 +65,7 @@ window.addEventListener("resize", () => {
         PositionTooltip($tooltip, $cell);
 });
 
-export function RenderTimecards(data) {
+export const RenderTimecards = (function($content, data) {
     return $Create(
         "div",
         {
@@ -103,8 +103,8 @@ export function RenderTimecards(data) {
                             target: "_blank",
                             rel: "noopener noreferrer",
                             title: user.home
-                                ? `View ${user.name}'s contributions on their home wiki`
-                                : `View ${user.name}'s global contributions`
+                                ? `Open ${user.name}'s home contibutions`
+                                : `Open ${user.name}'s global contributions`
                         },
                         user.name
                     ),
@@ -137,8 +137,8 @@ export function RenderTimecards(data) {
                                                     "--value": Ratio(count, maxCell)
                                                 }
                                             },
-                                            void(0),
-                                            void(0),
+                                            undefined,
+                                            undefined,
                                             $self => count > 0
                                                 ?
                                                     AddTooltip(
@@ -159,8 +159,8 @@ export function RenderTimecards(data) {
                                                 "--value": Ratio(count, maxDay)
                                             }
                                         },
-                                        void(0),
-                                        void(0),
+                                        undefined,
+                                        undefined,
                                         $self => count > 0
                                             ? AddTooltip($self, `${fullDaysOfWeek[di]}`, `${Text.label("edit", count, null, NumberFormatter)} (${percent})`)
                                             : 0
@@ -180,8 +180,8 @@ export function RenderTimecards(data) {
                                             "--value": Ratio(count, maxHour)
                                         }
                                     },
-                                    void(0),
-                                    void(0),
+                                    undefined,
+                                    undefined,
                                     $self => count > 0
                                         ? AddTooltip($self, `${hoursOfDay[hi]}:00–${hoursOfDay[hi]}:59`, `${Text.label("edit", count, null, NumberFormatter)} (${percent})`)
                                         : 0
@@ -195,4 +195,4 @@ export function RenderTimecards(data) {
             );
         })
     );
-}
+});

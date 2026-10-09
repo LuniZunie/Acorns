@@ -35,8 +35,11 @@ $controls-padding: 0.35rem;
 }
 
 .links-list {
-    display: grid;
-    gap: 0.7rem;
+    display: block;
+}
+
+.links-virtual-spacer {
+    display: block;
 }
 
 .links-empty {
@@ -52,6 +55,7 @@ $controls-padding: 0.35rem;
 
 .link-item {
     min-width: 0;
+    margin-bottom: 0.7rem;
     overflow: hidden;
     border: 1px solid $border;
     border-radius: 12px;
@@ -133,14 +137,20 @@ $controls-padding: 0.35rem;
     grid-template-columns: minmax(11rem, 0.8fr) minmax(0, 1.2fr);
     align-items: center;
     gap: 0.55rem;
+    box-sizing: border-box;
+    height: 3.25rem;
     min-height: 3.25rem;
     padding: 0.25rem 0.6rem;
     border-left: 3px solid var(--user-color, $border);
     background: $surface;
 
-    &:nth-of-type(even) {
+    &.even {
         background: $surface-muted;
     }
+}
+
+.links-edit-spacer {
+    grid-column: 1 / -1;
 }
 
 .links-edit-meta,

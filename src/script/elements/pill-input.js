@@ -1,33 +1,23 @@
 const SEPARATORS = /[\s_.\-/]+/;
 const SEPARATORS_GLOBAL = new RegExp(SEPARATORS.source, "g");
 
-const normalize = text =>
-    String(text ?? "")
-        .normalize("NFKD")
-        .replace(/\p{M}+/gu, "") // strip accents
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .trim();
+const AllowedErrors = (function(len) { return len <= 2 ? 0 : len <= 4 ? 1 : len <= 8 ? 2 : 3; });
+const Tokenize = (function(text) { return text.split(SEPARATORS).filter(Boolean) });
+const Normalize = (function(text) {
+    return String(text ?? "").normalize("NFKD").replace(/\p{M}+/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+});
 
-const tokenize = text => text.split(SEPARATORS).filter(Boolean);
-const allowedErrors = length => (length <= 2 ? 0 : length <= 4 ? 1 : length <= 8 ? 2 : 3);
-
-/** Damerau-Levenshtein distance between `query` and the closest prefix of `word`. */
-function prefixDistance(query, word, max) {
+const PrefixDistance = (function(query, word, max) {
     const m = query.length, n = word.length;
-    let prev2 = null;
-    let prev = Array.from({ length: n + 1 }, (_, j) => j);
-
+    let prev = Array.from({ length: n + 1 }, (_, i) => i), prev2 = null;
     for (let i = 1; i <= m; i++) {
-        const cur = [i];
+        const cur = [ i ];
         let rowMin = i;
-
         for (let j = 1; j <= n; j++) {
             const cost = query[i - 1] === word[j - 1] ? 0 : 1;
             let value = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
 
-            const transposed = i > 1 && j > 1 &&
-                query[i - 1] === word[j - 2] && query[i - 2] === word[j - 1];
+            const transposed = i > 1 && j > 1 && query[i - 1] === word[j - 2] && query[i - 2] === word[j - 1];
             if (transposed) value = Math.min(value, prev2[j - 2] + 1);
 
             cur[j] = value;
@@ -35,34 +25,36 @@ function prefixDistance(query, word, max) {
         }
 
         if (rowMin > max) return Infinity;
-        [prev2, prev] = [prev, cur];
+        [ prev2, prev ] = [ prev, cur ];
     }
 
     return Math.min(...prev);
-}
+});
 
-function scoreToken(token, word) {
+const ScoreToken = (function(token, word) {
+    const len = token.length;
     if (word === token) return 0;
-    if (word.startsWith(token)) return 0.1 + 0.4 * (1 - token.length / word.length);
-    if (token.length >= 2 && word.includes(token)) return 1;
-    if (token.length < 3) return Infinity;
+    if (word.startsWith(token)) return 0.1 + 0.4 * (1 - len / word.length);
+    if (len >= 2 && word.includes(token)) return 1;
+    if (len < 3) return Infinity;
 
-    const max = allowedErrors(token.length);
-    const d = prefixDistance(token, word, max);
+    const max = AllowedErrors(len);
+    const d = PrefixDistance(token, word, max);
     return d <= max ? 1.5 + d : Infinity;
-}
+});
 
-function scoreItem(item, query, tokens, compactQuery) {
+const ScoreItem = (function(item, query, tokens, compactQuery) {
     const { text } = item;
+    const len = text.length;
 
     if (text === query) return 0;
     if (text.startsWith(query))
-        return 1 + (text.length - query.length) / (text.length + 1);
+        return 1 + (len - query.length) / (len + 1);
 
     const position = text.indexOf(query);
     if (position !== -1) {
         const atWordStart = SEPARATORS.test(text[position - 1]);
-        return (atWordStart ? 2 : 3) + position / (text.length + 1);
+        return (atWordStart ? 2 : 3) + position / (len + 1);
     }
 
     if (compactQuery.length >= 3) {
@@ -73,15 +65,14 @@ function scoreItem(item, query, tokens, compactQuery) {
 
     if (!tokens.length) return Infinity;
 
-    // Match every query token to a distinct word of the item.
     const used = new Set();
     let total = 0;
     for (const token of tokens) {
         let best = Infinity, bestIndex = -1;
         item.words.forEach((word, i) => {
             if (used.has(i)) return;
-            const s = scoreToken(token, word);
-            if (s < best) [best, bestIndex] = [s, i];
+            const s = ScoreToken(token, word);
+            if (s < best) [ best, bestIndex ] = [ s, i ];
         });
 
         if (best === Infinity) return Infinity;
@@ -90,49 +81,49 @@ function scoreItem(item, query, tokens, compactQuery) {
     }
 
     return 4 + total / tokens.length;
-}
+});
 
-function createSuggestionSearch(suggestions = [], defaultLimit = 10) {
-    const items = [];
+const CreateSuggestionSearch = (function(suggestions = [ ], defaultLimit = 10) {
+    const items = [ ];
     const seen = new Set();
 
     for (const value of suggestions) {
         if (seen.has(value)) continue;
         seen.add(value);
 
-        const text = normalize(value);
+        const text = Normalize(value);
         if (!text) continue;
 
         items.push({
             value,
             text,
             compact: text.replace(SEPARATORS_GLOBAL, ""),
-            words: tokenize(text),
+            words: Tokenize(text),
             index: items.length
         });
     }
 
-    return function getSuggestions(text, limit = defaultLimit) {
+    return (function(text, limit = defaultLimit) {
         limit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : defaultLimit;
 
-        const query = normalize(text);
+        const query = Normalize(text);
         if (!query) return items.slice(0, limit).map(item => item.value);
 
-        const tokens = tokenize(query);
+        const tokens = Tokenize(query);
         const compactQuery = tokens.join("");
 
         return items
-            .map(item => ({ item, score: scoreItem(item, query, tokens, compactQuery) }))
+            .map(item => ({ item, score: ScoreItem(item, query, tokens, compactQuery) }))
             .filter(r => r.score !== Infinity)
             .sort((a, b) =>
                 a.score - b.score ||
-                a.item.text.length - b.item.text.length || // shorter, more specific hits
+                a.item.text.length - b.item.text.length ||
                 a.item.index - b.item.index
             )
             .slice(0, limit)
             .map(r => r.item.value);
-    };
-}
+    });
+});
 
 class PillInput extends HTMLElement {
     #$container;
@@ -144,7 +135,7 @@ class PillInput extends HTMLElement {
     #$clear;
     #initialized = false;
     #disabled = false;
-    #getSuggestions = null;
+    #GetSuggestions = null;
 
     constructor() {
         super();
@@ -159,7 +150,7 @@ class PillInput extends HTMLElement {
         const initial = this.getAttribute("pill-input-default");
         if (initial) this.#consume(initial, true);
 
-        this.#applyDisabled(); // apply any state set before render
+        this.#applyDisabled();
     }
 
     get delimiters() {
@@ -171,7 +162,7 @@ class PillInput extends HTMLElement {
     }
 
     get children() {
-        return [...this.#$pills.children];
+        return Array.from(this.#$pills.children);
     }
 
     disable() {
@@ -189,7 +180,7 @@ class PillInput extends HTMLElement {
     }
 
     suggest(values) {
-        this.#getSuggestions = createSuggestionSearch(Array.from(values, String), 20);
+        this.#GetSuggestions = CreateSuggestionSearch(Array.from(values, String), 20);
         this.#updateSuggestions();
         return this;
     }
@@ -247,18 +238,14 @@ class PillInput extends HTMLElement {
 
         this.#$copy.addEventListener("click", async () => {
             try {
-                const delimiter = [...this.delimiters][0] ?? "\n";
+                const delimiter = [ ...this.delimiters ][0] ?? "\n";
                 await navigator.clipboard.writeText(this.values().join(delimiter));
-            } catch (error) {
-                console.error("Failed to copy pill input values to the clipboard.", error);
-            }
+            } catch (error) { console.error("Failed to copy pill input values to the clipboard.", error); }
         });
         this.#$paste.addEventListener("click", async () => {
             try {
                 this.paste(await navigator.clipboard.readText());
-            } catch (error) {
-                console.error("Failed to paste pill input values from the clipboard.", error);
-            }
+            } catch (error) { console.error("Failed to paste pill input values from the clipboard.", error); }
         });
         this.#$clear.addEventListener("click", () => this.clear());
     }
@@ -276,9 +263,9 @@ class PillInput extends HTMLElement {
     #onInput(e) {
         if (this.#disabled) return;
 
-        if (e.inputType === "insertFromPaste") {
+        if (e.inputType === "insertFromPaste")
             this.#consumeInput(this.#$input.value);
-        } else {
+        else {
             this.#consume(this.#$input.value, false);
             this.#updateSuggestions();
         }
@@ -286,24 +273,22 @@ class PillInput extends HTMLElement {
 
     #onKeyDown(e) {
         if (this.#disabled) return;
-
         switch (e.key) {
             case "Enter": {
                 e.preventDefault();
                 const $first = this.#$suggestions.querySelector("button");
                 if ($first) $first.click();
                 else this.#commit();
-                break;
-            }
+            } break;
             case "ArrowDown":
-            case "ArrowUp":
+            case "ArrowUp": {
                 if (this.#$suggestions.hidden) break;
                 e.preventDefault();
                 this.#moveSuggestionFocus(e.key === "ArrowDown" ? 1 : -1);
-                break;
-            case "Backspace":
+            } break;
+            case "Backspace": {
                 this.#onBackspace(e);
-                break;
+            } break;
         }
     }
 
@@ -319,7 +304,6 @@ class PillInput extends HTMLElement {
         $last.remove();
         this.#pillsChanged();
 
-        // Ctrl/Alt+Backspace deletes the pill; plain Backspace moves it back into the input for editing.
         if (!e.ctrlKey && !e.altKey) {
             this.#$input.value = text + this.#$input.value;
             this.#$input.setSelectionRange(text.length, text.length);
@@ -327,7 +311,7 @@ class PillInput extends HTMLElement {
     }
 
     #moveSuggestionFocus(step) {
-        const $options = [...this.#$suggestions.querySelectorAll("button")];
+        const $options = Array.from(this.#$suggestions.querySelectorAll("button"));
         if (!$options.length) return;
 
         const current = $options.indexOf(this.shadowRoot.activeElement);
@@ -338,7 +322,7 @@ class PillInput extends HTMLElement {
     #applyDisabled() {
         this.classList.toggle("disabled", this.#disabled);
 
-        if (!this.#$input) return; // not rendered yet
+        if (!this.#$input) return;
 
         this.#$container.classList.toggle("disabled", this.#disabled);
         this.#$input.disabled = this.#disabled;
@@ -362,10 +346,10 @@ class PillInput extends HTMLElement {
     }
 
     #updateSuggestions() {
-        if (!this.#getSuggestions) return;
+        if (!this.#GetSuggestions) return;
 
         const text = this.#$input.value.trim();
-        const matches = this.#getSuggestions(text);
+        const matches = this.#GetSuggestions(text);
 
         this.#$suggestions.replaceChildren(...matches.map(value => {
             const $option = document.createElement("button");
@@ -389,20 +373,15 @@ class PillInput extends HTMLElement {
         if (this.#$suggestions) this.#$suggestions.hidden = true;
     }
 
-    /** Turns pasted text into pills and resets the input. */
     #consumeInput(text) {
         this.#consume(text, true);
         this.#$input.value = "";
         this.#hideSuggestions();
     }
 
-    /**
-     * Splits `text` on delimiters/newlines and adds a pill per part.
-     * When not `final`, the trailing part stays in the input.
-     */
     #consume(text, final = false) {
-        const chars = new Set([...this.delimiters, "\r", "\n"]);
-        const escaped = [...chars].map(c => c.replace(/[\\\]^-]/g, "\\$&")).join("");
+        const chars = new Set([ ...this.delimiters, "\r", "\n" ]);
+        const escaped = [ ...chars ].map(c => c.replace(/[\\\]^-]/g, "\\$&")).join("");
         const parts = text.split(new RegExp(`[${escaped}]`));
         const rest = final ? "" : parts.pop();
 
