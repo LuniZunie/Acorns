@@ -1,13 +1,9 @@
 @use "sass:map";
 @use "../tokens" as *;
 
-$shadow-color: rgb(54, 72, 54);
-$dark-shadow-color: rgb(35, 48, 37);
 $tooltip-background: #3f5143;
 $future-background: #f0f2ed;
 $future-border: #cfd7cb;
-$transition: 150ms ease;
-$slide: 300ms cubic-bezier(0.2, 0.75, 0.25, 1);
 $year-button-height: 2rem;
 $year-button-gap: 0.15rem;
 
@@ -17,11 +13,6 @@ $slides: (
     enter-newer: (from: 100%, to: 0),
     exit-newer: (from: 0, to: -100%)
 );
-
-@mixin focus-ring($offset: 2px) {
-    outline: 2px solid $accent;
-    outline-offset: $offset;
-}
 
 .calendar-page {
     display: grid;
@@ -43,7 +34,7 @@ $slides: (
 }
 
 .calendar-legend,
-.calendar-years {
+.calendar-nav {
     align-self: center;
     max-height: 70vh;
     overflow: hidden auto;
@@ -110,7 +101,7 @@ $slides: (
     cursor: pointer;
     transition: opacity $transition;
 
-    &.is-hidden {
+    &.hidden {
         opacity: 0.35;
     }
 
@@ -212,7 +203,7 @@ $slides: (
 .calendar-year-panel {
     @each $name in map.keys($slides) {
         &.#{$name} {
-            animation: calendar-#{$name} $slide both;
+            animation: calendar-#{$name} 300ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
         }
     }
 }
@@ -347,7 +338,7 @@ $slides: (
     pointer-events: none;
 }
 
-.calendar-years {
+.calendar-nav {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -371,11 +362,11 @@ $slides: (
         content: "";
         pointer-events: none;
         transform: translateY(calc(var(--active-year-index, 0) * #{$year-button-height + $year-button-gap}));
-        transition: transform $slide;
+        transition: transform 300ms cubic-bezier(0.2, 0.75, 0.25, 1);
     }
 }
 
-.calendar-year-button {
+.calendar-nav-button {
     position: relative;
     z-index: 1;
     flex: 0 0 $year-button-height;
@@ -417,13 +408,13 @@ $slides: (
     background: $tooltip-background;
     color: #fffefb;
     box-shadow: 0 4px 14px rgba($dark-shadow-color, 0.2);
-    opacity: 0;
+    opacity: 1;
     pointer-events: none;
     transform: translate(-50%, calc(-100% - 0.5rem));
     transition: opacity 140ms ease;
 
-    &.visible {
-        opacity: 1;
+    &.hidden {
+        opacity: 0;
     }
 
     &.below {
@@ -487,7 +478,7 @@ $slides: (
         max-height: none;
     }
 
-    .calendar-years {
+    .calendar-nav {
         align-self: start;
     }
 
@@ -533,7 +524,7 @@ $slides: (
 @media (prefers-reduced-motion: reduce) {
     .calendar-year,
     .calendar-year-panel,
-    .calendar-years::before,
+    .calendar-nav::before,
     .calendar-refresh-icon.rotating {
         animation: none;
         transition: none;

@@ -17,3 +17,17 @@ $border: #dce4d7;
 $accent-border: #d8e5d2;
 $accent-soft: #e6eee1;
 $accent-ink: #49654a;
+
+$shadow-color: rgb(54, 72, 54);
+$dark-shadow-color: rgb(35, 48, 37);
+
+$transition: 150ms ease;
+
+@mixin focus-ring($radius: null) {
+    @if $radius {
+        border-radius: $radius;
+    }
+
+    outline: 2px solid $accent;
+    outline-offset: 2px;
+}

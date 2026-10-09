@@ -1,14 +1,7 @@
 @use "../tokens" as *;
 
-$shadow-color: rgb(54, 72, 54);
 $cell-border-color: rgb(82, 119, 77);
 $tooltip-background: #3f5143;
-$transition: 160ms ease;
-
-@mixin focus-ring {
-    outline: 2px solid $accent;
-    outline-offset: 1px;
-}
 
 .timecard-page {
     display: flex;
@@ -77,6 +70,16 @@ $transition: 160ms ease;
     font-weight: 650;
     text-align: center;
     overflow-wrap: anywhere;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+
+    &:focus-visible {
+        @include focus-ring;
+        border-radius: 2px;
+    }
 }
 
 .timecard-table {

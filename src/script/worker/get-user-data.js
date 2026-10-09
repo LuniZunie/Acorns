@@ -52,7 +52,7 @@ const scheduler = {
         if (!this.running) this.run();
     },
 
-    // Removes and returns the highest priority item; first-queued wins ties. 
+    // Removes and returns the highest priority item; first-queued wins ties.
     takeNext() {
         let best = 0;
         for (let i = 1; i < this.queue.length; i++)
@@ -397,7 +397,7 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
             }
         };
 
-        const data = { missing: true, user, groups: [ ], rights: [ ], block: [ ], blocks: [ ], uploads: [ ], locks: [ ] };
+        const data = { missing: true, name: user, groups: [ ], rights: [ ], block: [ ], blocks: [ ], uploads: [ ], locks: [ ] };
         const projectsMap = new Map();
 
         const enqueue = createTracker(() => {

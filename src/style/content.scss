@@ -85,6 +85,7 @@
 #tabs {
     --active-tab: 0;
     --tab-count: 0;
+    --speed: 240ms;
 
     position: relative;
     display: flex;
@@ -101,7 +102,7 @@
         background: $accent;
         content: "";
         transform: translateX(calc(var(--active-tab) * 100%));
-        transition: transform 240ms cubic-bezier(0.2, 0.75, 0.25, 1);
+        transition: transform var(--speed) cubic-bezier(0.2, 0.75, 0.25, 1);
     }
 
     .tab-button {

@@ -1,4 +1,4 @@
-import { $ } from "../helpers/query-selector.js";
+import { $ } from "../helpers/DOM.js";
 import { Text } from "../helpers/text.js";
 import { Time } from "../helpers/time.js";
 import {
@@ -35,26 +35,14 @@ const entryKindOrder = new Map([
     "lock"
 ].map((kind, index) => [ kind, index ]));
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC"
-});
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    timeZone: "UTC"
-});
-const numberFormatter = new Intl.NumberFormat();
+const NumberFormatter = new Intl.NumberFormat();
+const DateFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const TimeFormatter = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "UTC" });
 
 const hiddenUsers = new Set();
 
 const startOfDay = timestamp => Math.floor(timestamp / Time.days(1)) * Time.days(1);
-const formatDate = timestamp => dateFormatter.format(new Date(timestamp));
+const formatDate = timestamp => DateFormatter.format(new Date(timestamp));
 
 function create(tag, className, textContent) {
     const $element = document.createElement(tag);
@@ -77,7 +65,7 @@ export function RenderTimeline(data, requestedDate) {
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
     const $scrollContainer = $("#tab-content");
 
-    const homes = new Map(data.map(user => [ String(user.user), user.home ]));
+    const homes = new Map(data.map(user => [ String(user.name), user.home ]));
     const users = Array.from(homes, ([ name, home ]) => ({
         name,
         home,
@@ -153,6 +141,8 @@ export function RenderTimeline(data, requestedDate) {
         attachListeners();
     }
 
+    return $page;
+
     function refreshColors() {
         SetUserColorSeed(PickColorSeed(users));
         StateUserColorSeed();
@@ -165,7 +155,7 @@ export function RenderTimeline(data, requestedDate) {
 
         const $icon = $legend.querySelector(".edit-timeline-refresh-icon");
         $icon.classList.remove("rotating");
-        void $icon.offsetWidth;
+        void($icon.offsetWidth);
         $icon.classList.add("rotating");
     }
 
@@ -401,7 +391,7 @@ function findDateIndex(dates, date) {
 
 function updateSwatch($swatch, user) {
     const label = `${user.visible ? "Hide" : "Show"} ${user.name}`;
-    $swatch.classList.toggle("is-hidden", !user.visible);
+    $swatch.classList.toggle("hidden", !user.visible);
     $swatch.setAttribute("aria-pressed", String(user.visible));
     $swatch.setAttribute("aria-label", label);
     $swatch.title = label;
@@ -482,28 +472,26 @@ function createTimelineDates(data) {
     const META = "meta.wikimedia.org";
 
     for (const user of data) {
-        const username = String(user.user);
-
         if (user.registration?.timestamp)
-            addEntry(username, META, {
+            addEntry(user.name, META, {
                 timestamp: user.registration.timestamp,
                 kind: "global-registration",
                 label: "Global registration",
-                title: `User:${username}`
+                title: `User:${user.name}`
             });
 
         for (const project of user.projects || [ ]) {
             if (project.registration?.timestamp)
-                addEntry(username, project.project, {
+                addEntry(user.name, project.project, {
                     timestamp: project.registration.timestamp,
                     kind: "local-registration",
                     label: "Local registration",
-                    title: `User:${username}`
+                    title: `User:${user.name}`
                 });
             for (const edit of project.edits || [ ])
-                addEntry(username, project.project, { ...edit, kind: "edit" });
+                addEntry(user.name, project.project, { ...edit, kind: "edit" });
             for (const block of project.blocks || [ ])
-                addEntry(username, project.project, {
+                addEntry(user.name, project.project, {
                     ...block,
                     kind: "local-block",
                     label: getBlockLabel(block.unblock, block.reblock, "Local")
@@ -511,15 +499,15 @@ function createTimelineDates(data) {
         }
 
         for (const block of user.blocks || [ ])
-            addEntry(username, META, {
+            addEntry(user.name, META, {
                 ...block,
                 kind: "global-block",
                 label: getBlockLabel(block.unblock, block.reblock, "Global")
             });
         for (const lock of user.locks || [ ])
-            addEntry(username, META, { ...lock, kind: "lock", label: getLockLabel(lock) });
+            addEntry(user.name, META, { ...lock, kind: "lock", label: getLockLabel(lock) });
         for (const upload of user.uploads || [ ])
-            addEntry(username, "commons.wikimedia.org", { ...upload, kind: "upload", label: "File upload" });
+            addEntry(user.name, "commons.wikimedia.org", { ...upload, kind: "upload", label: "File upload" });
     }
 
     const entryId = entry => String(entry.revid ?? entry.logid ?? "");
@@ -553,7 +541,7 @@ function createEntry(entry) {
 
     const $time = create("time");
     $time.dateTime = entry.timestampText;
-    $time.textContent = `${timeFormatter.format(new Date(entry.timestamp))} UTC`;
+    $time.textContent = `${TimeFormatter.format(new Date(entry.timestamp))} UTC`;
 
     let $timestamp;
     if (entry.kind === "edit") {
@@ -600,7 +588,7 @@ function createDateGap(skippedDays) {
 
     const $gap = create("div", "edit-timeline-date-gap");
     $gap.setAttribute("aria-label", `${skippedDays} ${unit} without edits`);
-    $gap.appendChild(create("span", undefined, `${numberFormatter.format(skippedDays)} ${unit} skipped`));
+    $gap.appendChild(create("span", undefined, `${NumberFormatter.format(skippedDays)} ${unit} skipped`));
     return $gap;
 }
 

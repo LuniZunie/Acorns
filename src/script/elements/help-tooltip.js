@@ -1,4 +1,4 @@
-import { $, $$ } from "../helpers/query-selector.js";
+import { $, $$ } from "../helpers/DOM.js";
 
 const $$widgets = Array.from($$(".help")).map($help => {
     const $button = $(".help-button", $help);

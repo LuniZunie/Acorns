@@ -13,6 +13,11 @@ export class Text {
     static pluralize(word, n, plural) {
         return new Text(word).plural(plural).get(n);
     }
+    static label(word, n, plural, NumberFormatter) {
+        if (NumberFormatter instanceof Intl.NumberFormat)
+            return `${NumberFormatter.format(n)} ${Text.pluralize(word, n, plural)}`;
+        return `${n} ${Text.pluralize(word, n, plural)}`;
+    }
 
     static Case = Case;
 

@@ -1,4 +1,4 @@
-import { $ } from "../helpers/query-selector.js";
+import { $ } from "../helpers/DOM.js";
 
 const $share = $("#share-button");
 const $copied = $("#share-copied-tooltip");

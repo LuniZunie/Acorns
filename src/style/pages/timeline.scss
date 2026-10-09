@@ -1,9 +1,6 @@
 @use "sass:map";
 @use "../tokens" as *;
 
-$shadow-color: rgb(54, 72, 54);
-$transition: 150ms ease;
-
 $kind-colors: (
     local-registration: (border: $accent-border, background: $accent-soft, color: $accent-ink),
     global-registration: (border: #cbd9e8, background: #e5edf7, color: #385878),
@@ -20,15 +17,6 @@ $date-button-levels: (
     3: (opacity: 0.72, scale: 0.92),
     4: (opacity: 0.45, scale: 0.82)
 );
-
-@mixin focus-ring($radius: null) {
-    @if $radius {
-        border-radius: $radius;
-    }
-
-    outline: 2px solid $accent;
-    outline-offset: 2px;
-}
 
 .edit-timeline-page {
     --timeline-heading-height: 2.5rem;
@@ -112,7 +100,7 @@ $date-button-levels: (
     cursor: pointer;
     transition: opacity $transition;
 
-    &.is-hidden {
+    &.hidden {
         opacity: 0.35;
     }
 

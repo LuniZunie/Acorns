@@ -1,4 +1,4 @@
-import { $, $$ } from "../helpers/query-selector.js";
+import { $, $$, $Text } from "../helpers/DOM.js";
 
 import { RenderTimecards } from "../pages/timecards.js";
 import { RenderCalendar } from "../pages/calendar.js";
@@ -10,7 +10,7 @@ export function LoadResults(results) {
 
     $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length);
 }
-export function ChangeTab(tab, circular = false) {
+export function ChangeTab(tab, instant = false, circular = false) {
     const state = window.history.state ?? { };
     if (state.tab !== tab && !String(state.data ?? "").startsWith("links:")) delete state.data;
 
@@ -20,37 +20,47 @@ export function ChangeTab(tab, circular = false) {
         window.history.replaceState(state, "");
 
         if (circular) throw new Error("Could not find valid tab target");
-        return ChangeTab($("#tabs > .tab-button.active").dataset.tab, true);
+        return ChangeTab($("#tabs > .tab-button.active").dataset.tab, instant, true);
     } else state.tab = tab;
 
     window.history.replaceState(state, "");
 
-    $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
+    $$("#tabs > .tab-button.active").forEach($tab => $tab.classList.remove("active"));
     $tab.classList.add("active");
-    $("#tabs").style.setProperty("--active-tab", [ ...$$("#tabs > .tab-button:not(.hidden)") ].findIndex($tab => $tab.classList.contains("active")));
 
-    $("#tab-content").innerHTML = "";
+    const $tabs = $("#tabs");
+    if (instant) $tabs.style.setProperty("--speed", 0);
+    $tabs.style.setProperty("--active-tab", [ ...$$("#tabs > .tab-button:not(.hidden)") ].findIndex($tab => $tab.classList.contains("active")));
+    if (instant) {
+        void($tabs.offsetHeight);
+        $tabs.style.removeProperty("--speed", 0);
+    }
+
     LoadTabContent(tab);
 }
 
 function LoadTabContent(tab) {
-    const state = window.history.state ?? { };
-    switch (tab) {
-        case "overview": {
+    $("#tab-content").replaceChildren((state => {
+        switch (tab) {
+            case "overview": {
 
-        } break;
-        case "timecards": {
-            RenderTimecards(self.results);
-        } break;
-        case "calendar": {
-            RenderCalendar(self.results, state.data);
-        } break;
-        case "timeline": {
-            RenderTimeline(self.results, state.data);
-        } break;
-        case "links": {
-            RenderLinks(self.results, state.data);
-        } break;
-        default: console.warn(`Tab "${tab}" has no content to load`);
-    }
+            } break;
+            case "timecards": {
+                return RenderTimecards(self.results);
+            } break;
+            case "calendar": {
+                return RenderCalendar(self.results, state.data);
+            } break;
+            case "timeline": {
+                return RenderTimeline(self.results, state.data);
+            } break;
+            case "links": {
+                return RenderLinks(self.results, state.data);
+            } break;
+            default: {
+                console.error(`Tab "${tab}" has no content to load`);
+                return $Text("Internal error");
+            } break;
+        }
+    })(window.history.state ?? { }) ?? $Text(""))
 }

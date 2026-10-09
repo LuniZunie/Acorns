@@ -1,4 +1,4 @@
-import { $, $$ } from "./helpers/query-selector.js";
+import { $, $$ } from "./helpers/DOM.js";
 
 import { NormalizeUser } from "./helpers/normalize-user.js";
 import { SetUserColorSeed } from "./helpers/username-to-color.js";
@@ -185,7 +185,9 @@ Promise.all([
             setProgress(progressTarget, true);
         }
 
+        let error = false;
         const { close } = GetUserData(() => oauth.access(), $users.values(), $projects.values(), function callback({ status, data }) {
+            if (error) return;
             switch (status) {
                 case "progress": {
                     setProgress(data);
@@ -203,10 +205,10 @@ Promise.all([
                             LoadResults(data);
 
                             $$("#tabs > .tab-button.active").forEach($t => $t.classList.remove("active"));
-                            if (state.tab) ChangeTab(state.tab);
+                            if (state.tab) ChangeTab(state.tab, true);
 
                             if (!$("#tabs > .tab-button.active"))
-                                ChangeTab($("#tabs > .tab-button").dataset.tab);
+                                ChangeTab($("#tabs > .tab-button").dataset.tab, true);
 
                             $$("#tabs > .tab-button").forEach($tab => {
                                 $tab.addEventListener("click", () => ChangeTab($tab.dataset.tab));
@@ -222,9 +224,10 @@ Promise.all([
                         };
                     }
 
-                    setProgress(1, undefined, true);
+                    setProgress(1, void(0), true);
                 } break;
                 case "error": {
+                    error = true;
                     console.error(data);
 
                     $progress.classList.add("error");
@@ -233,7 +236,8 @@ Promise.all([
 
                         $retry.classList.remove("hidden");
                     };
-                    setProgress(1, undefined, true);
+
+                    setProgress(1, void(0), true);
                 } break;
             }
         });

@@ -1,4 +1,4 @@
-import { $ } from "../helpers/query-selector.js";
+import { $ } from "../helpers/DOM.js";
 import { Storage } from "../helpers/storage.js";
 
 export class OAuth {

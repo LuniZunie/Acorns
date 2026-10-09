@@ -57,7 +57,7 @@ Parsed users with return the following data structure (note the information is m
 
 ```jsonc
 {
-    "user": "Example",
+    "name": "Example",
     "registration": { /* Global registration info */
         "project": "metawiki",
         "timestamp": "1970-01-01T00:00:00Z"
