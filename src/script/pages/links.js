@@ -22,7 +22,8 @@ const BLACKLIST_LINK = (function(url) {
     if (!url.protocol.startsWith("http")) return true;
 
     const parts = url.hostname.toLowerCase().split(".");
-    if (parts.at(-1) === "org" && this.mediawikiSecondLevels?.has(parts.at(-2))) return true;
+    const first = parts.at(-1);
+    if ((first === "org" || first === "com") && this.mediawikiSecondLevels?.has(parts.at(-2))) return true;
     return false;
 });
 

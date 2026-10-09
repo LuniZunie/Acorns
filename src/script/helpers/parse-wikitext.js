@@ -6,9 +6,9 @@ const IMG = [
     Uint8Array.from("[[media:", ch => ch.charCodeAt(0)),
 ];
 
-// Link terminators (ASCII): whitespace + [ ] < > " ' | { }
+// Link terminators (ASCII): whitespace + [ ] < > " ' | { } $
 const LT = new Uint8Array(128);
-for (const ch of " \t\n\v\f\r[]<>\"'|{}") LT[ch.charCodeAt(0)] = 1;
+for (const ch of " \t\n\v\f\r[]<>\"'|{}$") LT[ch.charCodeAt(0)] = 1;
 
 // Stop characters for the backwards "name=file.ext" scan
 const STOP = new Uint8Array(128);
