@@ -4,12 +4,6 @@ $hover-border: #afc1a7;
 $remove-color: #71866c;
 $remove-hover-bg: #d3e1cb;
 $remove-hover-color: #3f5a40;
-$transition: 150ms ease;
-
-@mixin focus-ring {
-    outline: 2px solid $accent;
-    outline-offset: 1px;
-}
 
 :host {
     display: block;
@@ -25,7 +19,7 @@ $transition: 150ms ease;
     background: $surface;
     box-shadow: 0 1px 3px rgba(54, 72, 54, 0.05);
     cursor: text;
-    transition: border-color $transition, box-shadow $transition;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
 
     &:not(.disabled):hover {
         border-color: $hover-border;

@@ -8,7 +8,7 @@ const IMG = [
 
 // Link terminators (ASCII): whitespace + [ ] < > " ' | { } $
 const LT = new Uint8Array(128);
-for (const ch of " \t\n\v\f\r[]<>\"'|{}$") LT[ch.charCodeAt(0)] = 1;
+for (const ch of " \t\n\v\f\r[]<>\"'|{}`\\^") LT[ch.charCodeAt(0)] = 1;
 
 // Stop characters for the backwards "name=file.ext" scan
 const STOP = new Uint8Array(128);
@@ -81,9 +81,36 @@ const ExtLen = (s, p) => {
     return 0;
 };
 
-export const ParseWikitext = s => {
+export const ParseWikitext = (s, wt) => {
     if (typeof s !== "string")
         return { c: [ ], i: [ ], l: [ ], d: true };
+
+    if (!wt) { // contentmodel is not wikitext, only search for cats (meow!)
+        const n = s.length, cats = [ ];
+
+        let p = s.indexOf("[[");
+        while (p >= 0) {
+            let r = p + 2;
+            while (s.charCodeAt(r) === 91) r++;          // "[[[category:" still matches, as before
+            // case-insensitive "category:" (c|32 folds A-Z to a-z; NaN|32 never matches)
+            if ((s.charCodeAt(r)     | 32) ===  99 && (s.charCodeAt(r + 1) | 32) ===  97 &&
+                (s.charCodeAt(r + 2) | 32) === 116 && (s.charCodeAt(r + 3) | 32) === 101 &&
+                (s.charCodeAt(r + 4) | 32) === 103 && (s.charCodeAt(r + 5) | 32) === 111 &&
+                (s.charCodeAt(r + 6) | 32) === 114 && (s.charCodeAt(r + 7) | 32) === 121 &&
+                s.charCodeAt(r + 8) === 58) {
+                const a = r + 9;
+                let q = a;
+                for (; q < n; q++) {
+                    const c = s.charCodeAt(q);
+                    if (c === 93 || c === 124) { cats.push(Clean(s, a, q)); break; }
+                    if (c === 10) break;                  // newline aborts, no push
+                }
+                if (q >= n) break;                        // unterminated at EOF: discarded, as before
+                p = s.indexOf("[[", q + 1);
+            } else p = s.indexOf("[[", r);                // r is never '[', so nothing is skipped
+        }
+        return { c: cats, i: [ ], l: [ ], d: true };
+    }
 
     const n = s.length;
     const cats = [ ], imgs = [ ], lnks = [ ];

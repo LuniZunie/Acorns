@@ -33,6 +33,7 @@ const waitUntil = async time => { // makes sure we never undershoot the wait eve
 };
 
 const revisionContent = rev => rev.slots?.main?.content ?? rev.content;
+const revisionModel = rev => rev.slots?.main?.contentmodel ?? rev.contentmodel;
 
 const scheduler = {
     rateLimit: RATE_LIMIT_NORMAL,
@@ -111,14 +112,17 @@ async function mwFetch(getToken, project, params) {
 
     while (true) {
         const token = await getToken();
-        const response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
-            method: "POST",
-            headers: {
-                "Api-User-Agent": API_USER_AGENT,
-                "Authorization": `Bearer ${token.access}`
-            },
-            body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
-        });
+        let response;
+        try {
+            response = await fetch(`https://${project}/w/api.php?crossorigin=`, {
+                method: "POST",
+                headers: {
+                    "Api-User-Agent": API_USER_AGENT,
+                    "Authorization": `Bearer ${token.access}`
+                },
+                body: new URLSearchParams({ ...params, format: "json", formatversion: "2" })
+            });
+        } catch (error) { throw new Error(`Network or CORS error (no HTTP response received): ${error.message}`, { cause: error }); }
 
         if (response.status === 401 && retryUnauthorized) {
             retryUnauthorized = false; // the token getter may hand out a fresh token
@@ -226,7 +230,7 @@ const revisionsParams = revids => ({
     action: "query",
     prop: "revisions",
     revids: revids.join("|"),
-    rvprop: "ids|content",
+    rvprop: "ids|content|contentmodel",
     rvslots: "main"
 });
 
@@ -284,7 +288,7 @@ const applyRevisions = (response, side, other, lookup) => {
 
     for (const page of response.query.pages || [ ])
         for (const rev of page.revisions || [ ])
-            store(rev.revid, ParseWikitext(revisionContent(rev)));
+            store(rev.revid, ParseWikitext(revisionContent(rev), revisionModel(rev) === "wikitext"));
 };
 
 async function GetUserData(getToken, users, projectRules, callback = () => { }) {
@@ -629,13 +633,13 @@ self.addEventListener("message", ({ data: message }) => {
         else request.resolve(message.token);
     } else if (message.type === "start") {
         GetUserData(requestToken, message.users, message.projectRules, result => {
-            if (result.status === "error") {
+            if (result.status === "error")
                 result.data = {
                     message: String(result.data),
                     name: result.data?.name || "Error",
-                    stack: result.data?.stack
+                    stack: result.data?.stack,
+                    cause: result.data?.cause
                 };
-            }
             postMessage({ type: "result", result });
         });
     }

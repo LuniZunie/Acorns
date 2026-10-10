@@ -36,6 +36,7 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
                     const error = new Error(data.message);
                     error.name = data.name;
                     if (data.stack) error.stack = data.stack;
+                    if (data.cause) error.cause = data.cause;
 
                     close();
                     callback({ status, data: error });
@@ -47,9 +48,9 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
         }
     });
 
-    worker.addEventListener("error", e => {
+    worker.addEventListener("error", error => {
         close();
-        callback({ status: "error", data: new Error(e.message) });
+        callback({ status: "error", data: new Error(`WebWorker error: ${error.message}`, { cause: error }) });
     });
 
     worker.postMessage({ type: "start", users, projectRules });

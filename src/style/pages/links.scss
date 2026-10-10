@@ -34,6 +34,36 @@ $controls-padding: 0.35rem;
     min-width: 0;
 }
 
+.links-filter-bar {
+    display: flex;
+    margin-bottom: 0.7rem;
+
+    & > .links-search {
+        box-sizing: border-box;
+        position: relative;
+        min-height: 46px;
+        padding: 6px 8px;
+        border: 1px solid $border;
+        border-radius: 8px;
+        background: $surface;
+        box-shadow: 0 1px 3px rgba(54, 72, 54, 0.05);
+        cursor: text;
+        transition: border-color 150ms ease, box-shadow 150ms ease;
+        flex: 1;
+        outline: none;
+        color: $accent-ink;
+
+        &:hover {
+            border-color: $accent-border;
+        }
+
+        &:focus-within {
+            border-color: $accent;
+            box-shadow: 0 0 0 3px rgba($accent, 0.16);
+        }
+    }
+}
+
 .links-list {
     display: block;
 }
@@ -134,7 +164,7 @@ $controls-padding: 0.35rem;
 
 .links-edit-row {
     display: grid;
-    grid-template-columns: minmax(11rem, 0.8fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(11rem, 0.8fr) minmax(0, 1.2fr) minmax(0, 0.05fr);
     align-items: center;
     gap: 0.55rem;
     box-sizing: border-box;
@@ -173,6 +203,17 @@ $controls-padding: 0.35rem;
     font-size: 0.78rem;
     font-variant-numeric: tabular-nums;
     text-decoration: none;
+}
+
+.links-edit-count {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid $accent-border;
+    border-radius: 999px;
+    background: $accent-soft;
+    color: $accent-ink;
+    font-size: 0.7rem;
+    font-weight: 650;
+    white-space: nowrap;
 }
 
 a.links-edit-timestamp,

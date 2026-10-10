@@ -3,11 +3,15 @@ import { SITE_MATRIX } from "../data/sitematrix.js";
 import { $, $$, $Text, $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
+import { ScoreSearch } from "../helpers/search.js";
 
 import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
 import { GetOrigin, GetPageURL, GetContributionsURL, GetGlobalContributionsURL, GetDiffURL } from "../helpers/wiki-urls.js";
 
 const DRAG_THRESHOLD = 5;
+const SEARCH_DEBOUNCE = 150;
+
+const REVERT_TAGS = new Set([ "mw-undo", "mw-rollback" ]);
 
 const LINK_MODE_DOMAIN = "domain";
 const LINK_MODE_FULL = "full";
@@ -44,16 +48,18 @@ const GetURL = (function(link) { try { return typeof link === "string" ? new URL
 const GetAddedLinks = (function*(result) {
     const MEDIAWIKI_SECOND_LEVELS = new Set(SITE_MATRIX.map.keys().map(url => url.split(".").at(-2).toLowerCase()).filter(Boolean));
     MEDIAWIKI_SECOND_LEVELS.add("toolforge").add("wmcloud").add("wmflabs");
-    const IsBlacklistedLink = BLACKLIST_LINK.bind({ mediawikiSecondLevels: MEDIAWIKI_SECOND_LEVELS });
+    const isBlacklistedLink = BLACKLIST_LINK.bind({ mediawikiSecondLevels: MEDIAWIKI_SECOND_LEVELS });
     for (const project of result.projects || [ ])
         for (const edit of project.edits || [ ]) {
+            if (!self.reverts && edit.tags.some(tag => REVERT_TAGS.has(tag))) continue;
+
             const added = edit.links?.["+"];
             if (!Array.isArray(added)) continue;
 
             for (const link of added) {
                 const url = GetURL(link);
-                if (IsBlacklistedLink(url)) continue;
-                yield { link, host: url.hostname.toLowerCase().replace(/^www\./, ""), edit, project: project.project, target: url.toString() };
+                if (isBlacklistedLink(url)) continue;
+                yield { link, host: url.host.toLowerCase().replace(/^www[0-9]*\./, ""), edit, project: project.project, target: url.toString() };
             }
         }
 });
@@ -65,21 +71,33 @@ const RenderMain = (function($content, data, mode) {
             for (const { link, target, host, edit, project } of GetAddedLinks(user)) {
                 const label = mode === LINK_MODE_FULL ? target : host;
                 if (!groups.has(label))
-                    groups.set(label, { label, host, additions: 0, accounts: new Set(), pages: new Set(), edits: [ ] });
+                    groups.set(label, { label, host, additions: 0, accounts: new Set(), pages: new Set(), edits: new Map() });
 
                 const group = groups.get(label);
                 group.additions++;
                 if (user.name) group.accounts.add(user.name);
                 if (edit.title) group.pages.add(edit.title);
-                group.edits.push({ ...edit, name: user.name, project, host, link, date: new Date(edit.timestamp).valueOf() });
+
+                if (group.edits.has(edit.revid)) group.edits.get(edit.revid).count++;
+                else
+                    group.edits.set(edit.revid, { ...edit, name: user.name, project, host, link, date: new Date(edit.timestamp).valueOf(), count: 1 });
             }
 
-    const links = Array.from(groups.values()).sort((a, b) =>
+    let links = [ ];
+    for (const group of groups.values()) {
+        group.edits = Array.from(group.edits.values());
+        links.push(group);
+    }
+
+    links.sort((a, b) =>
         b.accounts.size - a.accounts.size ||
-        b.pages.size - a.pages.size ||
         b.additions - a.additions ||
+        b.edits.length - a.edits.length ||
+        b.pages.size - a.pages.size ||
         a.label.localeCompare(b.label)
     );
+
+    if (self.search) links = ScoreSearch(self.search, links, link => link.label);
 
     for (const link of links)
         link.edits.sort((a, b) => a.date - b.date);
@@ -92,18 +110,20 @@ const RenderMain = (function($content, data, mode) {
     const offsets = [ ];
     let totalHeight = 0;
 
-    const GetLinkHeight = (function(index) {
-        return measuredHeights.get(index) ?? linkHeaderHeight + (
-            expanded[mode].has(links[index].label)
-                ? 1 + links[index].edits.length * editRowHeight
+    const GetLinkHeight = (function(i) {
+        return measuredHeights.get(i) ?? linkHeaderHeight + (
+            expanded[mode].has(links[i].label)
+                ? 1 + links[i].edits.length * editRowHeight
                 : 0
         );
     });
 
     const UpdateOffsets = (function() {
-        offsets.length = links.length;
+        const len = links.length;
+
         totalHeight = 0;
-        for (let i = 0; i < links.length; i++) {
+        offsets.length = len;
+        for (let i = 0; i < len; i++) {
             offsets[i] = totalHeight;
             totalHeight += GetLinkHeight(i) + linkGap;
         }
@@ -120,11 +140,11 @@ const RenderMain = (function($content, data, mode) {
     });
 
     let $list, renderedStart = -1, renderedEnd = -1;
-    const BuildEditRow = (function(edit, index) {
+    const BuildEditRow = (function(edit, i) {
         return $Create(
             "article",
             {
-                className: `links-edit-row ${index % 2 ? "even" : ""}`,
+                className: `links-edit-row ${i % 2 ? "even" : ""}`,
                 dataset: {
                     username: edit.name
                 },
@@ -139,6 +159,7 @@ const RenderMain = (function($content, data, mode) {
                         className: "links-edit-meta"
                     },
                     [
+                        $Create("span", { className: "links-edit-count" }, Text.label("link", edit.count, undefined, NumberFormatter)),
                         $Create(
                             ...(edit.revid !== undefined
                                 ? [
@@ -207,16 +228,20 @@ const RenderMain = (function($content, data, mode) {
 
     const UpdateEditRows = (function($editList, link) {
         if (!expanded[mode].has(link.label)) return;
+        const len = link.edits.length;
 
         const listTop = $editList.getBoundingClientRect().top - $content.getBoundingClientRect().top + $content.scrollTop;
         const overscan = Math.max(editRowHeight * 8, $content.clientHeight / 2);
+
         const first = Math.max(0, Math.floor(($content.scrollTop - listTop - overscan) / editRowHeight));
         const last = Math.min(
-            link.edits.length - 1,
+            len - 1,
             Math.ceil(($content.scrollTop + $content.clientHeight - listTop + overscan) / editRowHeight)
         );
-        const start = Math.min(first, link.edits.length);
+
+        const start = Math.min(first, len);
         const end = Math.max(start, last + 1);
+
         if ($editList.dataset.start === String(start) && $editList.dataset.end === String(end)) return;
 
         $editList.dataset.start = start;
@@ -230,10 +255,10 @@ const RenderMain = (function($content, data, mode) {
             }));
         for (let i = start; i < end; i++)
             $$children.push(BuildEditRow(link.edits[i], i));
-        if (end < link.edits.length)
+        if (end < len)
             $$children.push($Create("div", {
                 className: "links-edit-spacer",
-                style: { height: `${(link.edits.length - end) * editRowHeight}px` },
+                style: { height: `${(len - end) * editRowHeight}px` },
                 "aria-hidden": "true"
             }));
         $editList.replaceChildren(...$$children);
@@ -277,8 +302,9 @@ const RenderMain = (function($content, data, mode) {
                             },
                             [
                                 $Create("span", { className: "link-stat" }, Text.label("account", link.accounts.size, null, NumberFormatter)),
-                                $Create("span", { className: "link-stat" }, Text.label("page", link.pages.size, null, NumberFormatter)),
-                                $Create("span", { className: "link-stat" }, Text.label("addition", link.additions, null, NumberFormatter))
+                                $Create("span", { className: "link-stat" }, Text.label("addition", link.additions, null, NumberFormatter)),
+                                $Create("span", { className: "link-stat" }, Text.label("edit", link.edits.length, null, NumberFormatter)),
+                                $Create("span", { className: "link-stat" }, Text.label("page", link.pages.size, null, NumberFormatter))
                             ]
                         )
                     ],
@@ -318,10 +344,9 @@ const RenderMain = (function($content, data, mode) {
 
     const UpdateVisibleEditRows = (function() {
         for (const $item of $$(":scope > .link-item", $list)) {
-            const index = Number($item.dataset.index);
             const $editList = $(":scope > .links-edit-list", $item);
             if (!$editList.classList.contains("hidden"))
-                UpdateEditRows($editList, links[index]);
+                UpdateEditRows($editList, links[Number($item.dataset.index)]);
         }
     });
 
@@ -378,50 +403,90 @@ const RenderMain = (function($content, data, mode) {
         }
     });
 
+    let searchDebounce;
     UpdateOffsets();
     return $Create(
         "div",
         {
             className: "links-main"
         },
-        links.length === 0
-            ? [ $Create("p", { className: "links-empty" }, "No external links were found in the returned edits.") ]
-            : [ $Create("list", { className: "links-list", role: "list" }, "", undefined, $el => {
-                $list = $el;
-                RenderVisibleLinks(true);
+        [
+            $Create(
+                "div",
+                {
+                    className: "links-filter-bar"
+                },
+                [
+                    $Create(
+                        "input",
+                        {
+                            className: "links-search",
+                            type: "text",
+                            placeholder: "Search",
+                            value: self.search
+                        },
+                        undefined,
+                        [
+                            [ "input", ($self, e) => {
+                                self.search = $self.value;
+                                if (searchDebounce) clearTimeout(searchDebounce);
+                                searchDebounce = setTimeout(() => {
+                                    $(":scope > .links-page > .links-main > :not(.links-filter-bar)", $content).replaceWith(
+                                        $(":scope > :not(.links-filter-bar)", RenderMain($content, data, mode))
+                                    );
 
-                const $page = $el.closest(".links-page");
-                let scrollFrame;
-                const controller = new AbortController();
-                const observer = new MutationObserver(() => {
-                    if ($el.isConnected) return;
-                    controller.abort();
-                    if (scrollFrame) cancelAnimationFrame(scrollFrame);
-                    observer.disconnect();
-                });
-                observer.observe($page, { childList: true });
-                observer.observe($content, { childList: true });
-
-                $content.addEventListener("scroll", () => {
-                    if (scrollFrame) return;
-                    scrollFrame = requestAnimationFrame(() => {
-                        scrollFrame = undefined;
-                        RenderVisibleLinks();
-                    });
-                }, { passive: true, signal: controller.signal });
-                window.addEventListener("resize", () => {
-                    UpdateOffsets();
+                                    const state = history.state ?? { };
+                                    state.data = `${self.rememberedMode};${self.reverts};${self.search}`;
+                                    history.replaceState(state, "");
+                                }, SEARCH_DEBOUNCE);
+                            } ]
+                        ]
+                    )
+                ]
+            ),
+            links.length === 0
+                ? $Create("p", { className: "links-empty" }, "No external links were found in the returned edits.")
+                : $Create("list", { className: "links-list", role: "list" }, "", undefined, $el => {
+                    $list = $el;
                     RenderVisibleLinks(true);
-                }, { passive: true, signal: controller.signal });
-            }) ]
+
+                    const $page = $el.closest(".links-page");
+                    let scrollFrame;
+                    const controller = new AbortController();
+                    const observer = new MutationObserver(() => {
+                        if ($el.isConnected) return;
+                        controller.abort();
+                        if (scrollFrame) cancelAnimationFrame(scrollFrame);
+                        observer.disconnect();
+                    });
+                    observer.observe($page, { childList: true });
+                    observer.observe($content, { childList: true });
+
+                    $content.addEventListener("scroll", () => {
+                        if (scrollFrame) return;
+                        scrollFrame = requestAnimationFrame(() => {
+                            scrollFrame = undefined;
+                            RenderVisibleLinks();
+                        });
+                    }, { passive: true, signal: controller.signal });
+                    window.addEventListener("resize", () => {
+                        UpdateOffsets();
+                        RenderVisibleLinks(true);
+                    }, { passive: true, signal: controller.signal });
+                })
+        ]
     )
 });
 
-export const RenderLinks = (function($content, data, requestedMode = self.rememberedMode) {
+export const RenderLinks = (function($content, data, requestedData = `${self.rememberedMode};${self.reverts};${self.search}`) {
+    const [ requestedMode, reverts, search ] = requestedData.match(/^([^;]*)(?:;([^;]*))?(?:;([\s\S]*))?$/).slice(1);
     let mode = LINK_MODES.find(([ value ]) => value === requestedMode)?.[0] || LINK_MODES[0][0];
+    self.rememberedMode = mode;
+    self.reverts = reverts === "true";
+    self.search = String(search || "");
 
     const state = history.state ?? { };
-    self.rememberedMode = state.data = mode;
+    state.data = `${self.rememberedMode};${self.reverts};${self.search}`;
     history.replaceState(state, "");
 
     const users = data.map(user => ({ name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenAccounts.has(user.name) }));
@@ -555,10 +620,10 @@ export const RenderLinks = (function($content, data, requestedMode = self.rememb
                         [ "click", ($self, e) => {
                             const $parent = $self.parentElement;
                             if (value === $parent.dataset.mode) return;
-                            mode = value;
+                            self.rememberedMode = mode = value;
 
                             const state = history.state ?? { };
-                            self.rememberedMode = state.data = mode;
+                            state.data = `${self.rememberedMode};${self.reverts};${self.search}`;
                             history.replaceState(state, "");
 
                             $parent.dataset.mode = value;

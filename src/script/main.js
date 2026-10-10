@@ -85,6 +85,7 @@ const $loadingMessage = $("#app-loading-message");
 const $loadingError = $("#app-loading-error");
 $("#app-loading-reload").addEventListener("click", () => location.reload());
 
+let error = false;
 let progressTarget = 0, progressShown = 0, progressFrame = null, progressLast = 0;
 let progressCalback = null;
 const PROGRESS_RATE = 4;
@@ -184,10 +185,10 @@ Promise.all([
                 $("#input-screen-wrap").style.transition = "none";
                 $("#content").style.transition = "none";
             }
-            setProgress(progressTarget, true);
+            if (!error) setProgress(progressTarget, true);
         }
 
-        let error = false;
+        error = false;
         const { close } = GetUserData(() => oauth.access(), $users.values(), $projects.values(), function callback({ status, data }) {
             if (error) return;
             switch (status) {
@@ -229,17 +230,18 @@ Promise.all([
                     setProgress(1, undefined, true);
                 } break;
                 case "error": {
-                    error = true;
                     console.error(data);
 
                     $progress.classList.add("error");
                     progressCalback = () => {
+                        error = true;
                         $status.textContent = String(data.message);
 
                         $retry.classList.remove("hidden");
                     };
 
                     setProgress(1, undefined, true);
+                    error = true;
                 } break;
             }
         });
