@@ -16,6 +16,9 @@
 }
 
 #share-control {
+    -webkit-user-select: none;
+            user-select: none;
+
     position: absolute;
     bottom: 1rem;
     left: 1rem;
@@ -87,6 +90,8 @@
     --tab-count: 0;
     --speed: 240ms;
 
+    -webkit-user-select: none;
+            user-select: none;
     position: relative;
     display: flex;
     width: 100%;

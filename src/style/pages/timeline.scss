@@ -29,6 +29,10 @@ $date-button-levels: (
     gap: 0.75rem;
     min-height: 100%;
     padding: 0.5rem 0 3rem;
+
+    &:focus-visible {
+        outline: none;
+    }
 }
 
 #tab-content:has(.edit-timeline-page) {
@@ -40,6 +44,9 @@ $date-button-levels: (
 }
 
 .edit-timeline-navigation {
+    -webkit-user-select: none;
+            user-select: none;
+
     position: sticky;
     top: 50%;
     align-self: start;

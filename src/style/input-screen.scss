@@ -84,6 +84,9 @@ pill-input {
     }
 
     .field-heading {
+        -webkit-user-select: none;
+                user-select: none;
+
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -95,6 +98,9 @@ pill-input {
     }
 
     button {
+        -webkit-user-select: none;
+                user-select: none;
+
         margin-top: 24px;
         padding: 10px 16px;
         border: none;
@@ -131,6 +137,9 @@ pill-input {
     }
 
     #input-screen-actions {
+        -webkit-user-select: none;
+                user-select: none;
+
         display: flex;
         gap: 6px;
         margin-top: 24px;

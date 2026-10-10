@@ -72,6 +72,8 @@ $remove-hover-color: #3f5a40;
 }
 
 .remove {
+    -webkit-user-select: none;
+            user-select: none;
     display: inline-grid;
     place-items: center;
     width: 20px;
@@ -109,6 +111,8 @@ $remove-hover-color: #3f5a40;
 }
 
 .actions {
+    -webkit-user-select: none;
+            user-select: none;
     display: flex;
     justify-content: flex-end;
     gap: 4px;
