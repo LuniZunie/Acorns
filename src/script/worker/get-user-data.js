@@ -275,7 +275,7 @@ const finishEdit = edit => {
 };
 
 const applyRevisions = (response, side, other, lookup) => {
-    const store = (revid, content, texthidden) => {
+    const store = (revid, content) => {
         for (const edit of lookup(revid)) {
             edit[side] = content;
             if (edit[other].d) finishEdit(edit);
@@ -283,8 +283,10 @@ const applyRevisions = (response, side, other, lookup) => {
     };
 
     for (const bad of Object.values(response.query.badrevids || { }))
-        for (const edit of lookup(bad.revid))
-            if (edit[other].d = true) finishEdit(edit);
+        for (const edit of lookup(bad.revid)) {
+            edit[side].d = true;
+            if (edit[other].d) finishEdit(edit);
+        }
 
     for (const page of response.query.pages || [ ])
         for (const rev of page.revisions || [ ])
