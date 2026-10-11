@@ -32,6 +32,7 @@ const waitUntil = async time => { // makes sure we never undershoot the wait eve
     }
 };
 
+const revisionHidden = rev => rev.slots?.main?.texthidden ?? rev.texthidden;
 const revisionContent = rev => rev.slots?.main?.content ?? rev.content;
 const revisionModel = rev => rev.slots?.main?.contentmodel ?? rev.contentmodel;
 
@@ -248,9 +249,9 @@ const createEdit = contrib => ({
     images: { "+": [ ], "-": [ ] },
     links: { "+": [ ], "-": [ ] },
 
-    // A: this revision, B: its parent (c: categories, i: images, l: links, d: loaded)
-    A: { c: [ ], i: [ ], l: [ ], d: false },
-    B: { c: [ ], i: [ ], l: [ ], d: false }
+    // A: this revision, B: its parent (c: categories, i: images, l: links, d: loaded, _: texthidden)
+    A: { c: [ ], i: [ ], l: [ ], d: false, _: false },
+    B: { c: [ ], i: [ ], l: [ ], d: false, _: false }
 });
 
 const finishEdit = edit => {
@@ -259,6 +260,7 @@ const finishEdit = edit => {
     delete edit.B;
 
     edit.categories = A.c;
+    if (A._ || B._) return;
 
     const imagesA = new Set(A.i);
     const imagesB = new Set(B.i);
@@ -273,7 +275,7 @@ const finishEdit = edit => {
 };
 
 const applyRevisions = (response, side, other, lookup) => {
-    const store = (revid, content) => {
+    const store = (revid, content, texthidden) => {
         for (const edit of lookup(revid)) {
             edit[side] = content;
             if (edit[other].d) finishEdit(edit);
@@ -281,14 +283,12 @@ const applyRevisions = (response, side, other, lookup) => {
     };
 
     for (const bad of Object.values(response.query.badrevids || { }))
-        for (const edit of lookup(bad.revid)) {
-            edit[side].d = true;
-            if (edit[other].d) finishEdit(edit);
-        }
+        for (const edit of lookup(bad.revid))
+            if (edit[other].d = true) finishEdit(edit);
 
     for (const page of response.query.pages || [ ])
         for (const rev of page.revisions || [ ])
-            store(rev.revid, ParseWikitext(revisionContent(rev), revisionModel(rev) === "wikitext"));
+            store(rev.revid, ParseWikitext(revisionContent(rev), revisionModel(rev) !== "wikitext" || revisionHidden(rev)));
 };
 
 async function GetUserData(getToken, users, projectRules, callback = () => { }) {

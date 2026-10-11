@@ -81,11 +81,11 @@ const ExtLen = (s, p) => {
     return 0;
 };
 
-export const ParseWikitext = (s, wt) => {
+export const ParseWikitext = (s, cat) => {
     if (typeof s !== "string")
-        return { c: [ ], i: [ ], l: [ ], d: true };
+        return { c: [ ], i: [ ], l: [ ], d: true, _: true };
 
-    if (!wt) { // contentmodel is not wikitext, only search for cats (meow!)
+    if (cat) { // only search for cats (meow!)
         const n = s.length, cats = [ ];
 
         let p = s.indexOf("[[");
@@ -109,7 +109,7 @@ export const ParseWikitext = (s, wt) => {
                 p = s.indexOf("[[", q + 1);
             } else p = s.indexOf("[[", r);                // r is never '[', so nothing is skipped
         }
-        return { c: cats, i: [ ], l: [ ], d: true };
+        return { c: cats, i: [ ], l: [ ], d: true, _: true };
     }
 
     const n = s.length;
@@ -197,5 +197,5 @@ export const ParseWikitext = (s, wt) => {
     // a URL running to end of input is still a URL
     if (lm === 1 && n > lb) lnks.push(s.slice(ls, n));
 
-    return { c: cats, i: imgs, l: lnks, d: true };
+    return { c: cats, i: imgs, l: lnks, d: true, _: false };
 };
