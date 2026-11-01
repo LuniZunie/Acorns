@@ -80,8 +80,9 @@
 
             <label for="import-section">Date section</label>
             <div class="import-select">
-                <select id="import-section" disabled></select>
+                <button type="button" id="import-section" aria-haspopup="listbox" aria-expanded="false" disabled></button>
                 <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                <div id="import-sections" class="suggestions" role="listbox" hidden></div>
             </div>
 
             <div id="import-status" role="status" aria-live="polite"></div>

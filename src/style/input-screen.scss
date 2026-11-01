@@ -213,7 +213,7 @@ pill-input {
         gap: 6px;
         margin: 0;
         padding: 3px 10px;
-        border: 1px solid $accent-border;
+        border: 1px solid $border;
         border-radius: 999px;
         background: $accent-soft;
         color: $accent-ink;
@@ -223,7 +223,7 @@ pill-input {
 
         &:hover:not(:disabled) {
             background: $accent-border;
-            border-color: $accent;
+            border-color: $accent-border;
         }
 
         &:focus-visible {

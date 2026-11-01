@@ -10,10 +10,38 @@ export const InitImport = (function($users) {
     const $page = $("#import-page");
     const $load = $("#import-load");
     const $section = $("#import-section");
+    const $list = $("#import-sections");
+    const $select = $section.parentElement;
     const $status = $("#import-status");
 
     let sections = [ ];
     let controller = null;
+
+    const setSectionLabel = text => { $section.textContent = text; };
+
+    const closeList = () => {
+        $list.hidden = true;
+        $select.classList.remove("open");
+        $section.setAttribute("aria-expanded", "false");
+    };
+
+    const optionButtons = () => Array.from($list.querySelectorAll("button:not(:disabled)"));
+
+    const openList = () => {
+        if ($section.disabled || !$list.childElementCount) return;
+        $list.hidden = false;
+        $select.classList.add("open");
+        $section.setAttribute("aria-expanded", "true");
+    };
+
+    const moveListFocus = step => {
+        const $options = optionButtons();
+        if (!$options.length) return;
+
+        const current = $options.indexOf(document.activeElement);
+        const next = current === -1 ? (step > 0 ? 0 : $options.length - 1) : current + step;
+        $options[(next + $options.length) % $options.length].focus();
+    };
 
     const setStatus = (message = "", type = "") => {
         $status.textContent = message;
@@ -22,7 +50,9 @@ export const InitImport = (function($users) {
 
     const resetSections = (placeholder) => {
         sections = [ ];
-        $section.replaceChildren(new Option(placeholder, ""));
+        $list.replaceChildren();
+        closeList();
+        setSectionLabel(placeholder);
         $section.disabled = true;
     };
 
@@ -56,7 +86,7 @@ export const InitImport = (function($users) {
     };
 
     const importSection = section => {
-        $section.value = "";
+        closeList();
 
         const existing = new Set($users.values());
         const added = section.users
@@ -95,7 +125,8 @@ export const InitImport = (function($users) {
             const totals = new Map(), seen = new Map();
             sections.forEach(({ title }) => totals.set(title, (totals.get(title) ?? 0) + 1));
 
-            $section.replaceChildren(new Option("Select a date section…", ""));
+            setSectionLabel("Select a date section…");
+            $list.replaceChildren();
             sections.forEach((section, i) => {
                 const count = section.users.length;
                 const occurrence = (seen.get(section.title) ?? 0) + 1;
@@ -104,12 +135,24 @@ export const InitImport = (function($users) {
                 const name = totals.get(section.title) > 1
                     ? `${section.title} (${occurrence} of ${totals.get(section.title)})`
                     : section.title;
-                const option = new Option(
-                    `${name} — ${count === 0 ? "no accounts" : `${count} account${count === 1 ? "" : "s"}`}`,
-                    String(i)
-                );
-                option.disabled = count === 0;
-                $section.append(option);
+                const countText = count === 0 ? "no accounts" : `${count} account${count === 1 ? "" : "s"}`;
+
+                const $name = document.createElement("span");
+                $name.className = "section-name";
+                $name.textContent = name;
+
+                const $count = document.createElement("span");
+                $count.className = "section-count";
+                $count.textContent = countText;
+
+                const $option = document.createElement("button");
+                $option.type = "button";
+                $option.title = `${name} (${countText})`;
+                $option.disabled = count === 0;
+                $option.setAttribute("role", "option");
+                $option.append($name, $count);
+                $option.addEventListener("click", () => importSection(sections[i]));
+                $list.append($option);
             });
             $section.disabled = false;
 
@@ -153,9 +196,32 @@ export const InitImport = (function($users) {
         setStatus("");
     });
 
-    $section.addEventListener("change", () => {
-        const section = sections[Number.parseInt($section.value, 10)];
-        if (section) importSection(section);
+    $section.addEventListener("click", () => {
+        if ($list.hidden) openList();
+        else closeList();
+    });
+    $section.addEventListener("keydown", e => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            openList();
+            moveListFocus(e.key === "ArrowDown" ? 1 : -1);
+        } else if (e.key === "Escape" && !$list.hidden) {
+            e.stopPropagation();
+            closeList();
+        }
+    });
+    $list.addEventListener("keydown", e => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            moveListFocus(e.key === "ArrowDown" ? 1 : -1);
+        } else if (e.key === "Escape") {
+            e.stopPropagation();
+            closeList();
+            $section.focus();
+        }
+    });
+    $popup.addEventListener("click", e => {
+        if (!$select.contains(e.target)) closeList();
     });
 
     document.addEventListener("keydown", e => {

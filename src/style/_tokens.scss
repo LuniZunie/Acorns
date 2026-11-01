@@ -26,6 +26,43 @@ $dark-shadow-color: rgb(35, 48, 37);
 
 $transition: 150ms ease;
 
+@mixin suggestion-list {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    max-height: 220px;
+    padding: 5px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: $surface;
+    box-shadow: 0 8px 24px rgba(54, 72, 54, 0.16);
+    overflow-y: auto;
+
+    &[hidden] {
+        display: none;
+    }
+
+    button {
+        width: 100%;
+        padding: 8px 10px;
+        border: none;
+        border-radius: 5px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover:not(:disabled),
+        &:focus-visible {
+            background: $accent-soft;
+            outline: none;
+        }
+    }
+}
+
 @mixin focus-ring($radius: null) {
     @if $radius {
         border-radius: $radius;
