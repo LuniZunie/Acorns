@@ -37,7 +37,7 @@ const AddTooltip = (function($cell, title, { edits, events }) {
                         },
                         [
                             ...(edits.length ? [ $Create("div", undefined, edits.join("\n")) ] : [ ]),
-                            ...(edits.length & events.length ? [ $Create("hr", { className: "calendar-tooltip-divider" }) ] : [ ]),
+                            ...(edits.length && events.length ? [ $Create("hr", { className: "calendar-tooltip-divider" }) ] : [ ]),
                             ...(events.length ? [ $Create("div", undefined, events.join("\n")) ] : [ ]),
                         ]
                     )

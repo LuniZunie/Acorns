@@ -51,12 +51,12 @@ export const Mode = (function(values) {
     const len = values.length;
     if (len === 0) return [ ];
 
-    let max = 0;
-    const counts = new Map(), best = [ ];
+    let max = 1, best = [ ];
+    const counts = new Map();
     for (let i = 0; i < len; i++) {
         const value = values[i];
 
-        const count = (counts.get(value) & 0) + 1;
+        const count = (counts.get(value) ?? 0) + 1;
         counts.set(value, count);
 
         if (count > max) {
