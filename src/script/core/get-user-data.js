@@ -1,3 +1,5 @@
+import { ObjectURLList } from "../helpers/object-url-store.js";
+
 export const GetUserData = (function(getToken, users, projectRules, callback = () => { }) {
     if (typeof getToken !== "function")
         throw new Error("(get-user-data) Token getter must be a function");
@@ -10,11 +12,25 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
 
     const worker = new Worker(new URL("../worker/get-user-data.js", import.meta.url), { type: "module" });
 
-    let closed = false;
+    const editLists = new Map();
+    const getEditList = (user, project) => {
+        if (!editLists.has(user)) editLists.set(user, new Map());
+        const projects = editLists.get(user);
+        if (!projects.has(project)) projects.set(project, new ObjectURLList());
+        return projects.get(project);
+    };
+    const revokeEditLists = () => {
+        for (const projects of editLists.values())
+            for (const list of projects.values()) list.revoke();
+        editLists.clear();
+    };
+
+    let closed = false, delivered = false;
     const close = (() => {
         if (closed) return;
         closed = true;
         worker.terminate();
+        if (!delivered) revokeEditLists();
     });
 
     worker.addEventListener("message", async function(e) {
@@ -30,6 +46,9 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
                 history.replaceState({ ...state, ...message.state, submit: false, reload: true }, "");
                 history.pushState({ ...state, ...message.state }, "");
             } break;
+            case "edits": {
+                if (!closed) getEditList(message.user, message.project).addChunk(message.blob, message.count);
+            } break;
             case "result": {
                 const { status, data } = message.result;
                 if (status === "error") {
@@ -40,7 +59,14 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
 
                     close();
                     callback({ status, data: error });
-                } else if (status === "done") close();
+                } else if (status === "done") {
+                    for (const user of data)
+                        for (const project of user.projects ?? [ ])
+                            project.edits = getEditList(user.name, project.project);
+
+                    delivered = true;
+                    close();
+                }
 
                 callback(message.result);
             } break;

@@ -1,14 +1,19 @@
-import { $, $$, $Text } from "../helpers/DOM.js";
+import { $, $$, $Text, $Create } from "../helpers/DOM.js";
+
+import { ReleaseResults } from "../helpers/object-url-store.js";
 
 import { RenderTimecards } from "../pages/timecards.js";
 import { RenderCalendar } from "../pages/calendar.js";
 import { RenderTimeline } from "../pages/timeline.js";
 import { RenderLinks } from "../pages/links.js";
 
+let loadId = 0;
 const LoadTabContent = (function(tab) {
+    const id = ++loadId;
     const $content = $("#tab-content");
     $content.scrollTop = 0;
-    $content.replaceChildren((state => {
+
+    const content = (state => {
         switch (tab) {
             case "overview": {
 
@@ -30,10 +35,25 @@ const LoadTabContent = (function(tab) {
                 return $Text("Internal error");
             } break;
         }
-    })(history.state ?? { }) ?? $Text(""));
+    })(history.state ?? { });
+
+    // Pages read edits back from object URLs, so they render asynchronously.
+    if (content instanceof Promise) {
+        $content.replaceChildren($Create("div", { className: "tab-loading", role: "status", "aria-label": "Loading" }, [
+            $Create("div", { className: "tab-loading-spinner" })
+        ]));
+        content.then(
+            $page => { if (id === loadId) $content.replaceChildren($page ?? $Text("")); },
+            error => {
+                console.error(`Failed to render tab "${tab}"`, error);
+                if (id === loadId) $content.replaceChildren($Text("Internal error"));
+            }
+        );
+    } else $content.replaceChildren(content ?? $Text(""));
 });
 
 export const LoadResults = (function(results) {
+    ReleaseResults(self.results);
     self.results = results;
 
     $("#tabs").style.setProperty("--tab-count", $$("#tabs > .tab-button:not(.hidden)").length);

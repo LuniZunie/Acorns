@@ -8,6 +8,8 @@ import { ScoreSearch } from "../helpers/search.js";
 import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
 import { GetOrigin, GetPageURL, GetContributionsURL, GetGlobalContributionsURL, GetDiffURL } from "../helpers/wiki-urls.js";
 
+import { RenderLinksOverview } from "./links-overview.js";
+
 const DRAG_THRESHOLD = 5;
 const SEARCH_DEBOUNCE = 150;
 
@@ -66,15 +68,59 @@ const GetAddedLinks = (function*(result) {
         }
 });
 
+// Only edits that added links are kept in memory; everything else stays behind the object URLs.
+const linkEditCache = new WeakMap();
+const LoadLinkEdits = (async function(data) {
+    return Promise.all(data.map(async user => {
+        if (linkEditCache.has(user)) return linkEditCache.get(user);
+
+        const projects = [ ];
+        for (const project of user.projects || [ ]) {
+            const edits = [ ];
+            for await (const edit of project.edits)
+                if (edit.links?.["+"]?.length) edits.push(edit);
+            projects.push({ project: project.project, edits });
+        }
+
+        const loaded = {
+            name: user.name,
+            home: user.home,
+            totalEdits: (user.projects || [ ]).reduce((sum, project) => sum + project.edits.length, 0),
+            projects
+        };
+        linkEditCache.set(user, loaded);
+        return loaded;
+    }));
+});
+
 const RenderMain = (function($content, data, mode) {
     switch (mode) {
         case LINK_MODE_OVERVIEW: {
-            return $Create(
-                "div",
-                {
-                    className: "links-main"
+            const accounts = data.filter(user => !hiddenAccounts.has(user.name)).map(user => {
+                const account = {
+                    name: user.name,
+                    color: SeededColor(user.name),
+                    total: user.totalEdits,
+                    links: 0,
+                    pages: new Set(),
+                    domains: new Map(),
+                    urls: new Map()
+                };
+
+                const linkEdits = new Set();
+                for (const { host, target, edit, project } of GetAddedLinks(user)) {
+                    account.links++;
+                    linkEdits.add(`${project}:${edit.revid}`);
+                    if (edit.title) account.pages.add(`${project}:${edit.title}`);
+                    account.domains.set(host, (account.domains.get(host) ?? 0) + 1);
+                    account.urls.set(target, (account.urls.get(target) ?? 0) + 1);
                 }
-            );
+
+                account.linkEdits = linkEdits.size;
+                return account;
+            });
+
+            return RenderLinksOverview(accounts);
         } break;
         default: {
             const groups = new Map();
@@ -546,7 +592,8 @@ const RenderMain = (function($content, data, mode) {
     }
 });
 
-export const RenderLinks = (function($content, data, requestedData = `${self.rememberedMode};${self.reverts};${self.search || ""}`) {
+export const RenderLinks = (async function($content, results, requestedData = `${self.rememberedMode};${self.reverts};${self.search || ""}`) {
+    const data = await LoadLinkEdits(results);
     const [ requestedMode, reverts, search ] = requestedData.match(/^([^;]*)(?:;([^;]*))?(?:;([\s\S]*))?$/).slice(1);
     let mode = LINK_MODES.find(([ value ]) => value === requestedMode)?.[0] || LINK_MODES[0][0];
     self.rememberedMode = mode;
@@ -563,6 +610,10 @@ export const RenderLinks = (function($content, data, requestedData = `${self.rem
         for (const user of users) user.color = SeededColor(user.name);
         for (const $element of $$("#tab-content *[data-username]", $content))
             $element.style.setProperty("--user-color", SeededColor($element.dataset.username));
+
+        // chart colors are fixed at creation, so rebuild them
+        if (mode === LINK_MODE_OVERVIEW)
+            $(":scope > .links-page > .links-main", $content).replaceWith(RenderMain($content, data, mode));
     };
 
     return $Create(

@@ -1,0 +1,215 @@
+@use "../tokens" as *;
+
+#import-popup-blocker {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(44, 58, 45, 0.38);
+    z-index: 999;
+    transition: opacity 0.2s ease;
+
+    &.hidden {
+        pointer-events: none;
+        opacity: 0;
+    }
+}
+
+#import-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: min(460px, calc(100% - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 22px 24px 24px;
+    overflow-y: auto;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(54, 72, 54, 0.16);
+    color: $text;
+    font-family: system-ui, sans-serif;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+
+    &.hidden {
+        pointer-events: none;
+        visibility: hidden;
+        opacity: 0;
+        transform: translate(-50%, calc(-50% + 8px));
+    }
+
+    .import-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+
+        h2 {
+            margin: 0;
+            font-size: 1.15rem;
+        }
+    }
+
+    #import-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: $muted;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background $transition, color $transition;
+
+        &:hover {
+            background: $surface-muted;
+            color: $text;
+        }
+
+        &:focus-visible {
+            @include focus-ring(6px);
+        }
+    }
+
+    .import-description {
+        margin: 0 0 6px;
+        color: $muted;
+        font-size: 0.88rem;
+        line-height: 1.4;
+    }
+
+    label {
+        margin: 12px 0 2px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .import-row {
+        display: flex;
+        gap: 6px;
+    }
+
+    input,
+    select {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid $border;
+        border-radius: 6px;
+        background: $surface;
+        color: $text;
+        font: inherit;
+        font-size: 0.92rem;
+        transition: border-color $transition, background $transition, opacity $transition;
+
+        &:hover:not(:disabled) {
+            border-color: $accent-border;
+        }
+
+        &:focus-visible {
+            outline: 2px solid $accent;
+            outline-offset: 1px;
+            border-color: $accent;
+        }
+
+        &:disabled {
+            background: $surface-muted;
+            color: $muted;
+            cursor: not-allowed;
+        }
+
+        &::placeholder {
+            color: $muted;
+            opacity: 0.7;
+        }
+    }
+
+    #import-load {
+        flex: none;
+        padding: 9px 18px;
+        border: none;
+        border-radius: 6px;
+        background: $accent;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background $transition;
+
+        &:hover:not(:disabled) {
+            background: $accent-hover;
+        }
+
+        &:focus-visible {
+            @include focus-ring(6px);
+        }
+
+        &:disabled {
+            background: $muted;
+            cursor: default;
+        }
+    }
+
+    &.loading #import-load::after {
+        content: "";
+        display: inline-block;
+        width: 0.8em;
+        height: 0.8em;
+        margin-left: 8px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        vertical-align: -0.1em;
+        animation: import-spin 0.7s linear infinite;
+    }
+
+    .import-select {
+        position: relative;
+
+        select {
+            appearance: none;
+            padding-right: 34px;
+            cursor: pointer;
+            text-overflow: ellipsis;
+        }
+
+        i {
+            position: absolute;
+            top: 50%;
+            right: 12px;
+            transform: translateY(-50%);
+            color: $muted;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+    }
+
+    #import-status {
+        min-height: 1.2em;
+        margin-top: 10px;
+        font-size: 0.85rem;
+        line-height: 1.3;
+        color: $muted;
+
+        &.error {
+            color: $cancel-hover;
+        }
+
+        &.success {
+            color: $success;
+        }
+    }
+}
+
+@keyframes import-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

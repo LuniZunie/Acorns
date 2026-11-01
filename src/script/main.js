@@ -5,6 +5,8 @@ import { $, $$ } from "./helpers/DOM.js";
 import { SetColorSeed } from "./helpers/color-seed.js";
 import { NormalizeUser } from "./helpers/normalize-user.js";
 
+import { InitImport } from "./elements/import.js";
+
 import { OAuth } from "./core/oauth.js";
 import { GetUserData } from "./core/get-user-data.js";
 import { LoadResults, ChangeTab } from "./core/content.js";
@@ -32,6 +34,8 @@ if (url.searchParams.has("users")) {
     $users.clear();
     state.users.forEach(user => $users.paste(user));
 }
+
+const importer = InitImport($users);
 
 const $projects = $("#project-pill-input");
 if (url.searchParams.has("projects")) {
@@ -166,6 +170,7 @@ Promise.all([
 
         $users.disable();
         $projects.disable();
+        importer.disable();
 
         $submit.classList.add("hidden");
         $actions.classList.remove("hidden");
@@ -265,6 +270,7 @@ Promise.all([
 
             $users.enable();
             $projects.enable();
+            importer.enable();
         };
 
         $retry.onclick = () => {

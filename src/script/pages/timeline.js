@@ -30,7 +30,7 @@ const DateFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short", mon
 const TimeFormatter = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "UTC" });
 
 const hiddenUsers = new Set();
-const CreateTimelineDates = (function(data) {
+const CreateTimelineDates = (async function(data) {
     const entriesByDate = new Map();
 
     const addEntry = ((name, project, entry) => {
@@ -59,8 +59,9 @@ const CreateTimelineDates = (function(data) {
                     label: "local registration",
                     title: `User:${user.name}`
                 });
-            for (const edit of project.edits || [ ])
-                addEntry(user.name, project.project, { ...edit, kind: "edit", label: "edit" });
+            // the timeline stays in memory, so keep only the fields it displays
+            for await (const { title, revid, parentid, timestamp } of project.edits)
+                addEntry(user.name, project.project, { title, revid, parentid, timestamp, kind: "edit", label: "edit" });
             for (const block of project.blocks || [ ])
                 addEntry(user.name, project.project, {
                     ...block,
@@ -102,11 +103,11 @@ const CreateTimelineDates = (function(data) {
         }));
 });
 
-export const RenderTimeline = (function($content, data, requestedDate = self.rememberedDate) {
+export const RenderTimeline = (async function($content, data, requestedDate = self.rememberedDate) {
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
 
     const users = new Map(data.map(user => [ user.name, { name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenUsers.has(user.name) }]));
-    const dates = CreateTimelineDates(data);
+    const dates = await CreateTimelineDates(data);
 
     const GetVisibleEntries = (function(i) { return dates[i].entries.filter(entry => !hiddenUsers.has(entry.name)); });
     const GetDateIndex = (function(date) {

@@ -207,6 +207,35 @@ pill-input {
         }
     }
 
+    .import-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 3px 10px;
+        border: 1px solid $accent-border;
+        border-radius: 999px;
+        background: $accent-soft;
+        color: $accent-ink;
+        font-size: 0.8rem;
+        font-weight: 600;
+        transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+
+        &:hover:not(:disabled) {
+            background: $accent-border;
+            border-color: $accent;
+        }
+
+        &:focus-visible {
+            @include focus-ring(999px);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    }
+
     .help {
         position: relative;
         display: flex;

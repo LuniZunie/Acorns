@@ -223,7 +223,7 @@ const RenderYearPanel = (function(year, users, activity, events, current = false
 });
 
 
-export const RenderCalendar = (function($content, data, requestedYear = self.rememberedYear) {
+export const RenderCalendar = (async function($content, data, requestedYear = self.rememberedYear) {
     let oldest = Infinity, newest = -Infinity;
     const users = new Map();
     const activity = new Map(), events = new Map();
@@ -260,7 +260,7 @@ export const RenderCalendar = (function($content, data, requestedYear = self.rem
                 addEvent(user.name, user.registration.timestamp, "registration", "Global registration");
 
             for (const project of user.projects || [ ]) {
-                for (const edit of project.edits || [ ]) {
+                for await (const edit of project.edits) {
                     const day = getDayBucket(edit.timestamp, activity, () => new Map());
                     if (day) day.bucket.set(user.name, (day.bucket.get(user.name) || 0) + 1);
                 }

@@ -65,20 +65,26 @@ window.addEventListener("resize", () => {
         PositionTooltip($tooltip, $cell);
 });
 
-export const RenderTimecards = (function($content, data) {
+export const RenderTimecards = (async function($content, data) {
+    const grids = new Map();
+    for (const user of data) {
+        const days = Array.from({ length: 7 }, () => Array(24).fill(0));
+        for (const project of user.projects)
+            for await (const edit of project.edits) {
+                const timestamp = new Date(edit.timestamp);
+                if (Number.isNaN(timestamp.getTime())) continue;
+                days[(timestamp.getUTCDay() + 6) % 7][timestamp.getUTCHours()]++;
+            }
+        grids.set(user, days);
+    }
+
     return $Create(
         "div",
         {
             className: "timecard-page",
         },
         data.map(user => {
-            const days = Array.from({ length: 7 }, () => Array(24).fill(0));
-            for (const project of user.projects)
-                for (const edit of project.edits) {
-                    const timestamp = new Date(edit.timestamp);
-                    if (Number.isNaN(timestamp.getTime())) continue;
-                    days[(timestamp.getUTCDay() + 6) % 7][timestamp.getUTCHours()]++;
-                }
+            const days = grids.get(user);
 
             const hours = Array.from({ length: 24 }, (_, hour) => Sum(days.map(day => day[hour])));
 

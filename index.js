@@ -114,6 +114,7 @@ const CLIENT = process.env.CLIENT;
 if (!CLIENT) throw new Error("CLIENT environment variable is not set");
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "src");
+const CHART_JS_PATH = join(dirname(fileURLToPath(import.meta.url)), "node_modules", "chart.js", "dist", "chart.umd.min.js");
 const MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -125,6 +126,8 @@ const MIME_TYPES = {
     ".jpeg": "image/jpeg",
     ".gif": "image/gif",
     ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
+    ".xml": "application/xml; charset=utf-8",
     ".woff2": "font/woff2",
     ".woff": "font/woff",
 };
@@ -151,6 +154,20 @@ const server = createServer(async (req, res) => {
         case "/sitematrix": {
             res.writeHead(200, { "Content-Type": "application/json" });
             return res.end(siteMatrixJson);
+        } break;
+        case "/vendor/chart.js": {
+            try {
+                const file = await readFile(CHART_JS_PATH);
+                res.writeHead(200, {
+                    "Content-Type": MIME_TYPES[".js"],
+                    "Content-Length": file.length
+                });
+                return res.end(req.method === "HEAD" ? undefined : file);
+            } catch (error) {
+                console.error(error);
+                res.writeHead(500);
+                return res.end("Internal Server Error");
+            }
         } break;
         case "/callback": {
             const ip = req.socket.remoteAddress ?? "unknown";

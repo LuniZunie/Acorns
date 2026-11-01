@@ -3,7 +3,18 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Acorns</title>
+        <title>acorns</title>
+
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <meta name="theme-color" content="#789b73" />
+        <meta name="msapplication-config" content="/browserconfig.xml" />
+        <meta name="msapplication-TileColor" content="#789b73" />
+        <meta name="application-name" content="Acorns" />
+        <meta name="apple-mobile-web-app-title" content="Acorns" />
 
         <!-- Font Awesome Version 7.3.1 -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" integrity="sha512-Rl9V6K6zGubt3V0LpC6P0fEaN7kH8w19MszNre8A6JcO40eYc1B0bCgX05mK6zGvLt..." crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -14,6 +25,7 @@
 
         <link rel="stylesheet" href="/css/elements/legend.css" />
         <link rel="stylesheet" href="/css/elements/auth-popup.css" />
+        <link rel="stylesheet" href="/css/elements/import-popup.css" />
         <link rel="stylesheet" href="/css/elements/pill-input.css" />
 
         <link rel="stylesheet" href="/css/pages/timecards.css" />
@@ -21,6 +33,7 @@
         <link rel="stylesheet" href="/css/pages/timeline.css" />
         <link rel="stylesheet" href="/css/pages/links.css" />
 
+        <script src="/vendor/chart.js"></script>
         <script src="/script/elements/pill-input.js"></script>
         <script type="module" src="/script/elements/help-tooltip.js"></script>
         <script type="module" src="/script/elements/share.js"></script>
@@ -51,10 +64,34 @@
             <p>If you the tab did not open, open this <a id="auth-popup-link" target="_blank">link</a> manually.</p>
         </div>
 
+        <div id="import-popup-blocker" class="hidden"></div>
+        <div id="import-popup" class="hidden" role="dialog" aria-modal="true" aria-labelledby="import-title">
+            <div class="import-header">
+                <h2 id="import-title">Import from SPI</h2>
+                <button type="button" id="import-close" aria-label="Close"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <p class="import-description">Add the suspected sockpuppets listed in a sockpuppet investigation case.</p>
+
+            <label for="import-page">SPI page</label>
+            <div class="import-row">
+                <input type="text" id="import-page" placeholder="Wikipedia:Sockpuppet investigations/Example" autocomplete="off" spellcheck="false">
+                <button type="button" id="import-load">Load</button>
+            </div>
+
+            <label for="import-section">Date section</label>
+            <div class="import-select">
+                <select id="import-section" disabled></select>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </div>
+
+            <div id="import-status" role="status" aria-live="polite"></div>
+        </div>
+
         <div id="input-screen-wrap">
             <div id="input-screen">
                 <div class="field-heading">
                     <span>Users</span>
+                    <button type="button" id="import-open" class="import-button" aria-haspopup="dialog">Import</button>
                 </div>
                 <pill-input id="user-pill-input" pill-input-delimiters=",|"></pill-input>
 

@@ -2,6 +2,7 @@ import { Time } from "../helpers/time.js";
 
 import { AddArrayToArray, BatchArray } from "../helpers/array.js";
 
+import { ObjectURLWriter } from "../helpers/object-url-store.js";
 import { NormalizeUser } from "../helpers/normalize-user.js";
 import { ParseWikitext } from "../helpers/parse-wikitext.js";
 
@@ -14,7 +15,7 @@ const INITIAL_RATE_LIMIT_BACKOFF = 1000;
 const MAX_RATE_LIMIT_BACKOFF = 60000;
 const API_USER_AGENT = "Acorns-Client/1.0 (https://github.com/LuniZunie/Acorns)";
 
-const PRIORITY = { normal: 0, contribs: 1, login: 2 };
+const PRIORITY = { normal: 0, login: 2 };
 
 const getExpectedEditRequests = editCount => {
     if (!Number.isFinite(editCount) || editCount <= 0) return 0;
@@ -274,18 +275,18 @@ const finishEdit = edit => {
     edit.links["-"] = B.l.filter(link => !linksA.has(link.toLowerCase()));
 };
 
-const applyRevisions = (response, side, other, lookup) => {
+const applyRevisions = (response, side, other, lookup, finish) => {
     const store = (revid, content) => {
         for (const edit of lookup(revid)) {
             edit[side] = content;
-            if (edit[other].d) finishEdit(edit);
+            if (edit[other].d) finish(edit);
         }
     };
 
     for (const bad of Object.values(response.query.badrevids || { }))
         for (const edit of lookup(bad.revid)) {
             edit[side].d = true;
-            if (edit[other].d) finishEdit(edit);
+            if (edit[other].d) finish(edit);
         }
 
     for (const page of response.query.pages || [ ])
@@ -401,12 +402,26 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
 
         const data = { missing: true, name: user, groups: [ ], rights: [ ], block: [ ], blocks: [ ], uploads: [ ], locks: [ ] };
         const projectsMap = new Map();
+        const editSinks = new Map(); // project -> finished edits go to `writer`, unfinished ones wait in `pending`
+
+        const flushEdits = () => {
+            for (const { writer, pending } of editSinks.values()) {
+                for (const edit of pending) { // revisions that never came back
+                    delete edit.A;
+                    delete edit.B;
+                    writer.push(edit);
+                }
+                pending.clear();
+                writer.flush();
+            }
+        };
 
         const enqueue = createTracker(() => {
             if (progress.done < progress.total) {
                 progress.done = progress.total;
                 progress.report();
             }
+            flushEdits();
             resolve(data);
         });
 
@@ -434,23 +449,31 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
         const handleNewEdits = (project, contribs) => {
             if (contribs.length === 0) return;
 
-            const projectData = projectsMap.get(project);
+            const { writer, pending } = editSinks.get(project);
             const editsByRevid = new Map();
             const basesByParent = new Map(); // parent revid -> set of revids built on it
             const pendingParents = new Set();
             let parentlessEdits = 0;
 
+            // finished edits leave memory immediately; they only live on as serialized chunks
+            const finish = edit => {
+                finishEdit(edit);
+                editsByRevid.delete(edit.revid);
+                pending.delete(edit);
+                writer.push(edit);
+            };
+
             const requestRevisions = (revids, side, other, lookup) => enqueue([[
                 project,
                 revisionsParams(revids),
                 response => {
-                    applyRevisions(response, side, other, lookup);
+                    applyRevisions(response, side, other, lookup, finish);
                     progress.advance(1);
                 }
             ]]);
 
             const requestParents = parentIds => requestRevisions(parentIds, "B", "A", revid =>
-                Array.from(basesByParent.get(revid) ?? [ ], base => editsByRevid.get(base))
+                Array.from(basesByParent.get(revid) ?? [ ], base => editsByRevid.get(base)).filter(Boolean)
             );
 
             for (const batch of BatchArray(contribs, EDIT_BATCH)) {
@@ -458,7 +481,7 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
 
                 for (const contrib of batch) {
                     const edit = createEdit(contrib);
-                    projectData.edits.push(edit);
+                    pending.add(edit);
                     editsByRevid.set(contrib.revid, edit);
                     revids.push(contrib.revid);
 
@@ -494,12 +517,13 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                         AddArrayToArray(projectsMap.get(project).block, response.query.blocks.map(localBlock));
 
                     handleNewEdits(project, response.query.usercontribs || [ ]);
+                    // queued behind this page's revision requests so edits are finished and offloaded
+                    // before the next page of contributions is fetched
                     if (response.continue)
                         enqueueEdits(project, { ...contribsBody, ...response.continue });
 
                     progress.advance(1);
-                },
-                PRIORITY.contribs
+                }
             ]]);
         };
 
@@ -534,10 +558,13 @@ async function GetUserData(getToken, users, projectRules, callback = () => { }) 
                     registration: { method: merge.method, timestamp: merge.timestamp },
                     edit_count: merge.editcount,
                     block: [ ],
-                    blocks: [ ],
-                    edits: [ ]
+                    blocks: [ ]
                 };
                 projectsMap.set(host, projectData);
+                editSinks.set(host, {
+                    pending: new Set(),
+                    writer: new ObjectURLWriter((blob, count) => postMessage({ type: "edits", user, project: host, blob, count }))
+                });
                 data.projects.push(projectData);
 
                 if (merge.editcount > 0) {
