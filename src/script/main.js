@@ -20,9 +20,12 @@ SetColorSeed(state.seed || 0);
 
 const $users = $("#user-pill-input");
 $users.addEventListener("pills-changed", () => {
+    const seen = new Set();
     $users.children.forEach($child => {
         const normalized = NormalizeUser($child.value);
-        if (!normalized) $child.remove();
+        if (!normalized || seen.has(normalized)) return $child.remove();
+
+        seen.add(normalized);
         $child.value = normalized;
     });
 });
