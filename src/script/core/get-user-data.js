@@ -76,7 +76,7 @@ export const GetUserData = (function(getToken, users, projectRules, callback = (
 
     worker.addEventListener("error", error => {
         close();
-        callback({ status: "error", data: new Error(`WebWorker error: ${error.message}`, { cause: error }) });
+        callback({ status: "error", data: new Error(`WebWorker error: ${error.message || error}`, { cause: error }) });
     });
 
     worker.postMessage({ type: "start", users, projectRules });
