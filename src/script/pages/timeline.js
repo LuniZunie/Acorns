@@ -2,6 +2,7 @@ import { $, $$, $Text, $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
 import { Time } from "../helpers/time.js";
+import { Preloaded, Warm } from "../helpers/preload.js";
 
 import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
 import { GetOrigin, GetPageURL, GetContributionsURL, GetGlobalContributionsURL, GetDiffURL, GetLogURL } from "../helpers/wiki-urls.js";
@@ -103,11 +104,13 @@ const CreateTimelineDates = (async function(data) {
         }));
 });
 
+export const PreloadTimeline = (function(data) { return Warm("timeline", data, () => CreateTimelineDates(data)); });
+
 export const RenderTimeline = (async function($content, data, requestedDate = self.rememberedDate) {
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
 
     const users = new Map(data.map(user => [ user.name, { name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenUsers.has(user.name) }]));
-    const dates = await CreateTimelineDates(data);
+    const dates = await Preloaded("timeline", data, () => CreateTimelineDates(data));
 
     const GetVisibleEntries = (function(i) { return dates[i].entries.filter(entry => !hiddenUsers.has(entry.name)); });
     const GetDateIndex = (function(date) {

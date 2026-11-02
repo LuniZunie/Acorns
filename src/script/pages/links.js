@@ -4,6 +4,7 @@ import { $, $$, $Text, $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
 import { ScoreSearch } from "../helpers/search.js";
+import { Preloaded, Warm } from "../helpers/preload.js";
 
 import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
 import { GetOrigin, GetPageURL, GetContributionsURL, GetGlobalContributionsURL, GetDiffURL } from "../helpers/wiki-urls.js";
@@ -69,11 +70,8 @@ const GetAddedLinks = (function*(result) {
 });
 
 // Only edits that added links are kept in memory; everything else stays behind the object URLs.
-const linkEditCache = new WeakMap();
 const LoadLinkEdits = (async function(data) {
     return Promise.all(data.map(async user => {
-        if (linkEditCache.has(user)) return linkEditCache.get(user);
-
         const projects = [ ];
         for (const project of user.projects || [ ]) {
             const edits = [ ];
@@ -82,16 +80,16 @@ const LoadLinkEdits = (async function(data) {
             projects.push({ project: project.project, edits });
         }
 
-        const loaded = {
+        return {
             name: user.name,
             home: user.home,
             totalEdits: (user.projects || [ ]).reduce((sum, project) => sum + project.edits.length, 0),
             projects
         };
-        linkEditCache.set(user, loaded);
-        return loaded;
     }));
 });
+
+export const PreloadLinks = (function(data) { return Warm("links", data, () => LoadLinkEdits(data)); });
 
 const RenderMain = (function($content, data, mode) {
     switch (mode) {
@@ -593,7 +591,7 @@ const RenderMain = (function($content, data, mode) {
 });
 
 export const RenderLinks = (async function($content, results, requestedData = `${self.rememberedMode};${self.reverts};${self.search || ""}`) {
-    const data = await LoadLinkEdits(results);
+    const data = await Preloaded("links", results, () => LoadLinkEdits(results));
     const [ requestedMode, reverts, search ] = requestedData.match(/^([^;]*)(?:;([^;]*))?(?:;([\s\S]*))?$/).slice(1);
     let mode = LINK_MODES.find(([ value ]) => value === requestedMode)?.[0] || LINK_MODES[0][0];
     self.rememberedMode = mode;

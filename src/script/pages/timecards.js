@@ -2,6 +2,7 @@ import { $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
 import { Ratio, Sum } from "../helpers/math.js";
+import { Preloaded, Warm } from "../helpers/preload.js";
 
 import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
 
@@ -65,7 +66,7 @@ window.addEventListener("resize", () => {
         PositionTooltip($tooltip, $cell);
 });
 
-export const RenderTimecards = (async function($content, data) {
+const ComputeGrids = (async function(data) {
     const grids = new Map();
     for (const user of data) {
         const days = Array.from({ length: 7 }, () => Array(24).fill(0));
@@ -77,6 +78,13 @@ export const RenderTimecards = (async function($content, data) {
             }
         grids.set(user, days);
     }
+    return grids;
+});
+
+export const PreloadTimecards = (function(data) { return Warm("timecards", data, () => ComputeGrids(data)); });
+
+export const RenderTimecards = (async function($content, data) {
+    const grids = await Preloaded("timecards", data, () => ComputeGrids(data));
 
     return $Create(
         "div",

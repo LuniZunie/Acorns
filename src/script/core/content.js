@@ -1,12 +1,52 @@
 import { $, $$, $Text } from "../helpers/DOM.js";
 
 import { ReleaseResults } from "../helpers/object-url-store.js";
+import { ClearPreloads, Release } from "../helpers/preload.js";
 import { CreateTabSkeleton } from "../helpers/skeleton.js";
 
-import { RenderTimecards } from "../pages/timecards.js";
-import { RenderCalendar } from "../pages/calendar.js";
-import { RenderTimeline } from "../pages/timeline.js";
-import { RenderLinks } from "../pages/links.js";
+import { RenderTimecards, PreloadTimecards } from "../pages/timecards.js";
+import { RenderCalendar, PreloadCalendar } from "../pages/calendar.js";
+import { RenderTimeline, PreloadTimeline } from "../pages/timeline.js";
+import { RenderLinks, PreloadLinks } from "../pages/links.js";
+
+const preloaders = {
+    timecards: PreloadTimecards,
+    calendar: PreloadCalendar,
+    timeline: PreloadTimeline,
+    links: PreloadLinks
+};
+
+export const PreloadTab = (function(tab) {
+    if (!self.results || $("#tabs > .tab-button.active")?.dataset.tab === tab) return;
+    preloaders[tab]?.(self.results).catch(error => console.warn(`Failed to preload tab "${tab}"`, error));
+});
+export const CancelPreload = (function(tab) { Release(tab); });
+
+// Hovering (or focusing) a tab usually means it is about to be opened, so warm its data after a short intent delay.
+const HOVER_INTENT_DELAY = 100;
+{
+    const $tabs = $("#tabs");
+    const tabOf = ($el) => $el instanceof Element ? $el.closest(".tab-button")?.dataset.tab : undefined;
+
+    let intentTimer;
+    const start = (tab, delay) => {
+        clearTimeout(intentTimer);
+        if (!tab) return;
+        if (delay) intentTimer = setTimeout(() => PreloadTab(tab), delay);
+        else PreloadTab(tab);
+    };
+    const stop = (tab, e) => {
+        if (!tab || tabOf(e.relatedTarget) === tab) return;
+        clearTimeout(intentTimer);
+        CancelPreload(tab);
+    };
+
+    $tabs.addEventListener("pointerover", e => e.pointerType === "touch" ? 0 : start(tabOf(e.target), HOVER_INTENT_DELAY));
+    $tabs.addEventListener("pointerout", e => stop(tabOf(e.target), e));
+    $tabs.addEventListener("pointerdown", e => start(tabOf(e.target), 0));
+    $tabs.addEventListener("focusin", e => start(tabOf(e.target), HOVER_INTENT_DELAY));
+    $tabs.addEventListener("focusout", e => stop(tabOf(e.target), e));
+}
 
 let loadId = 0;
 const LoadTabContent = (function(tab) {
@@ -53,6 +93,7 @@ const LoadTabContent = (function(tab) {
 });
 
 export const LoadResults = (function(results) {
+    ClearPreloads();
     ReleaseResults(self.results);
     self.results = results;
 

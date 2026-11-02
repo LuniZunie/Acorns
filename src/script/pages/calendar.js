@@ -2,6 +2,7 @@ import { $, $$, $Text, $Create } from "../helpers/DOM.js";
 
 import { Text } from "../helpers/text.js";
 import { Weight } from "../helpers/math.js";
+import { Preloaded, Warm } from "../helpers/preload.js";
 
 import { PickColorSeed, SeededColor } from "../helpers/color-seed.js";
 import { GetContributionsURL, GetGlobalContributionsURL } from "../helpers/wiki-urls.js";
@@ -223,9 +224,8 @@ const RenderYearPanel = (function(year, users, activity, events, current = false
 });
 
 
-export const RenderCalendar = (async function($content, data, requestedYear = self.rememberedYear) {
+const ComputeCalendarData = (async function(data) {
     let oldest = Infinity, newest = -Infinity;
-    const users = new Map();
     const activity = new Map(), events = new Map();
 
     {
@@ -255,7 +255,6 @@ export const RenderCalendar = (async function($content, data, requestedYear = se
         });
 
         for (const user of data) {
-            users.set(user.name, { name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenUsers.has(user.name) });
             if (user.registration?.timestamp)
                 addEvent(user.name, user.registration.timestamp, "registration", "Global registration");
 
@@ -287,6 +286,15 @@ export const RenderCalendar = (async function($content, data, requestedYear = se
         if (oldest === Infinity)
             oldest = newest = new Date().getFullYear();
     }
+
+    return { oldest, newest, activity, events };
+});
+
+export const PreloadCalendar = (function(data) { return Warm("calendar", data, () => ComputeCalendarData(data)); });
+
+export const RenderCalendar = (async function($content, data, requestedYear = self.rememberedYear) {
+    const { oldest, newest, activity, events } = await Preloaded("calendar", data, () => ComputeCalendarData(data));
+    const users = new Map(data.map(user => [ user.name, { name: user.name, home: user.home, color: SeededColor(user.name), visible: !hiddenUsers.has(user.name) } ]));
 
     const years = Array.from({ length: newest - oldest + 1 }, (_, i) => oldest + i);
 
