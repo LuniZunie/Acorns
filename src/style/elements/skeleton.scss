@@ -1,0 +1,99 @@
+@use "../tokens" as *;
+
+.tab-skeleton {
+    max-height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    -webkit-user-select: none;
+            user-select: none;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+
+    .skeleton {
+        border-color: transparent;
+        background: $border;
+        color: transparent;
+        text-decoration: none;
+    }
+
+    .skeleton-line {
+        display: block;
+        height: 0.8rem;
+        min-width: 0;
+        border-radius: 4px;
+    }
+
+    .skeleton-circle {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+    }
+
+    .skeleton-year {
+        width: 4.5rem;
+        height: 1.5rem;
+        margin: 0.25rem auto 0;
+        border-radius: 6px;
+    }
+
+    .legend {
+        transition: none;
+    }
+
+    .legend-swatch {
+        display: block;
+    }
+
+    .timecard-caption {
+        height: 1.2rem;
+        border-radius: 4px;
+    }
+
+    .timecard-table > .cell {
+        background: $surface-muted;
+    }
+
+    .timecard-table > .cell.summary-cell {
+        background: $border;
+    }
+
+    .calendar-nav-button {
+        height: 2rem;
+        border-radius: 7px;
+    }
+
+    .calendar-nav::before {
+        display: none;
+    }
+
+    .calendar-month-title {
+        margin-top: 0.25rem;
+        border-radius: 4px;
+    }
+
+    .edit-timeline-date-button {
+        border-radius: 7px;
+    }
+
+    .links-account-name::before {
+        display: none;
+    }
+
+    .links-card-value,
+    .links-card-detail,
+    .links-account-detail,
+    .link-stat {
+        border-radius: 999px;
+    }
+}
+
+@keyframes skeleton-pulse {
+    50% {
+        opacity: 0.55;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-skeleton {
+        animation: none;
+    }
+}

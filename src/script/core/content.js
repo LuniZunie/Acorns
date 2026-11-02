@@ -1,6 +1,7 @@
-import { $, $$, $Text, $Create } from "../helpers/DOM.js";
+import { $, $$, $Text } from "../helpers/DOM.js";
 
 import { ReleaseResults } from "../helpers/object-url-store.js";
+import { CreateTabSkeleton } from "../helpers/skeleton.js";
 
 import { RenderTimecards } from "../pages/timecards.js";
 import { RenderCalendar } from "../pages/calendar.js";
@@ -39,9 +40,8 @@ const LoadTabContent = (function(tab) {
 
     // Pages read edits back from object URLs, so they render asynchronously.
     if (content instanceof Promise) {
-        $content.replaceChildren($Create("div", { className: "tab-loading", role: "status", "aria-label": "Loading" }, [
-            $Create("div", { className: "tab-loading-spinner" })
-        ]));
+        const $skeleton = CreateTabSkeleton(tab, { accounts: self.results?.length, state: history.state?.data });
+        if ($skeleton) $content.replaceChildren($skeleton);
         content.then(
             $page => { if (id === loadId) $content.replaceChildren($page ?? $Text("")); },
             error => {
